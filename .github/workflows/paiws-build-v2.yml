@@ -1,0 +1,55 @@
+name: PAIWS Minibar x64 build v2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout patch files
+        uses: actions/checkout@v4
+        with:
+          path: meta
+
+      - name: Checkout upstream 0.4.4
+        uses: actions/checkout@v4
+        with:
+          repository: vertopolkaLF/codex-minibar
+          ref: 0.4.4
+          path: src
+
+      - name: Repair and apply PAIWS Claude remote patch
+        shell: pwsh
+        run: |
+          (Get-Content meta/paiws-claude-remote.patch) |
+            ForEach-Object { if ($_ -eq '') { ' ' } else { $_ } } |
+            Set-Content -Encoding utf8 paiws-claude-remote-fixed.patch
+          git -C src apply ../paiws-claude-remote-fixed.patch
+
+      - name: Install Rust 1.95
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Format patched source
+        working-directory: src
+        run: cargo fmt --all
+
+      - name: Build x64 portable
+        shell: pwsh
+        working-directory: src
+        run: .\build.ps1 -Arch x64 -SkipInstaller
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-minibar-paiws-0.4.4-x64
+          path: src/dist/0.4.4/*-portable.zip
+          if-no-files-found: error
