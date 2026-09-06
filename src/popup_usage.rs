@@ -393,7 +393,7 @@ fn usage_hero(
     use_colored_provider_icons: bool,
 ) -> Element {
     let headline = match metric {
-        OverviewMetric::Cost => format_spend_full(snapshot.totals.estimated_cost_microusd),
+        OverviewMetric::Cost => format_total_cost(&snapshot.totals),
         OverviewMetric::Tokens => format_token_count(snapshot.totals.total_tokens()),
     };
     let mut meta: Vec<Element> = vec![
@@ -554,7 +554,7 @@ fn provider_row(
     let icon_name = descriptor.icon;
     let color = provider_brand_color(entry.provider, color_scheme, use_colored_provider_icons);
     let value = match metric {
-        OverviewMetric::Cost => format_spend(entry.usage.estimated_cost_microusd),
+        OverviewMetric::Cost => format_usage_cost(&entry.usage),
         OverviewMetric::Tokens => format_token_count(entry.usage.total_tokens()),
     };
     let share = match metric {
@@ -563,7 +563,7 @@ fn provider_row(
     };
     let other = match metric {
         OverviewMetric::Cost => format_token_count(entry.usage.total_tokens()),
-        OverviewMetric::Tokens => format_spend(entry.usage.estimated_cost_microusd),
+        OverviewMetric::Tokens => format_usage_cost(&entry.usage),
     };
     let detail = format!(
         "{:.1}% of {} · {}",
@@ -1817,11 +1817,9 @@ fn day_breakdown_row(
     for (index, provider) in providers.iter().enumerate() {
         let value = row.by_provider.get(provider);
         let cell = match metric {
-            OverviewMetric::Cost => format_day_cost(
-                value
-                    .map(|usage| usage.estimated_cost_microusd)
-                    .unwrap_or(0),
-            ),
+            OverviewMetric::Cost => value
+                .map(format_usage_day_cost)
+                .unwrap_or_else(|| "$0".into()),
             OverviewMetric::Tokens => format_token_count(
                 value.map(TokenUsage::total_tokens).unwrap_or(0),
             ),
@@ -1834,7 +1832,7 @@ fn day_breakdown_row(
         );
     }
     let total = match metric {
-        OverviewMetric::Cost => format_day_cost(row.cost_microusd),
+        OverviewMetric::Cost => format_breakdown_cost(row),
         OverviewMetric::Tokens => format_token_count(row.tokens),
     };
     cells.push(
@@ -1981,6 +1979,38 @@ fn provider_brand_color(
 
 fn format_spend(microusd: u64) -> String {
     format_spend_dollars((microusd as f64 / 1_000_000.0).round() as u64)
+}
+
+fn format_total_cost(usage: &TokenUsage) -> String {
+    if usage.requests > 0 && usage.priced_requests == 0 {
+        "—".into()
+    } else {
+        format_spend_full(usage.estimated_cost_microusd)
+    }
+}
+
+fn format_usage_cost(usage: &TokenUsage) -> String {
+    if usage.requests > 0 && usage.priced_requests == 0 {
+        "—".into()
+    } else {
+        format_spend(usage.estimated_cost_microusd)
+    }
+}
+
+fn format_usage_day_cost(usage: &TokenUsage) -> String {
+    if usage.requests > 0 && usage.priced_requests == 0 {
+        "—".into()
+    } else {
+        format_day_cost(usage.estimated_cost_microusd)
+    }
+}
+
+fn format_breakdown_cost(row: &BreakdownRow) -> String {
+    if row.requests > 0 && row.priced_requests == 0 {
+        "—".into()
+    } else {
+        format_spend(row.cost_microusd)
+    }
 }
 
 fn format_day_cost(microusd: u64) -> String {

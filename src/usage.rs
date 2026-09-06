@@ -7,19 +7,21 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Local, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Timelike, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::settings::ProviderKind;
 use crate::store;
 
-// Version 5 matches T3/ccusage Codex transcript rules: first session_meta
+// Version 6 matches T3/ccusage Codex transcript rules and the current pricing
+// table: first session_meta
 // wins, fork/subagent copied history is dropped, and unchanged token_count
 // re-emits are ignored. Older daily totals must be rebuilt from the logs.
-pub(crate) const CODEX_CACHE_VERSION: u8 = 5;
-// Version 2 only accepts Claude `assistant` usage lines, matching T3.
-pub(crate) const CLAUDE_CACHE_VERSION: u8 = 2;
+pub(crate) const CODEX_CACHE_VERSION: u8 = 6;
+// Version 3 only accepts Claude `assistant` usage lines, matching T3 and the
+// current model pricing table.
+pub(crate) const CLAUDE_CACHE_VERSION: u8 = 3;
 const CACHE_RETENTION_DAYS: i64 = 365;
 
 /// Locally recorded Codex token usage. This is deliberately derived only from
@@ -559,9 +561,14 @@ fn ingest_codex_line(
         cached_input_tokens,
         output_tokens,
         cached.fast_service_tier,
+        timestamp,
     );
-    let cache_savings_microusd =
-        codex_cache_savings_microusd(model.as_deref(), cached_input_tokens, cached.fast_service_tier);
+    let cache_savings_microusd = codex_cache_savings_microusd(
+        model.as_deref(),
+        cached_input_tokens,
+        cached.fast_service_tier,
+        timestamp,
+    );
     Some((
         timestamp,
         TokenUsage {
@@ -586,27 +593,62 @@ struct CodexModelRates {
 }
 
 /// Price a single Codex event using its model and the tier recorded in that
-/// rollout. The values are OpenAI API list prices per million tokens, not a
+/// rollout. The values are provider API list prices per million tokens, not a
 /// charge for a ChatGPT subscription. Older rollout formats sometimes omit a
-/// model, so those events use the current Codex base rate as an explicit
-/// fallback rather than erasing the whole spend tile.
+/// model, so those events remain unpriced rather than silently borrowing a
+/// rate from an unrelated model.
 fn codex_estimated_cost_microusd(
     model: Option<&str>,
     input: u64,
     cached_input: u64,
     output: u64,
     fast_service_tier: bool,
+    timestamp: DateTime<Utc>,
 ) -> Option<u64> {
-    let model = model.unwrap_or("gpt-5.3-codex").trim().to_ascii_lowercase();
+    let model = model?.trim().to_ascii_lowercase();
     let base = codex_price_model_name(&model);
+    // Rates verified against the providers' public API pricing pages on
+    // 2026-09-06. These are API-equivalent values, not ChatGPT plan billing.
     let mut rates = match base {
+        "deepseek/deepseek-v4-pro" | "deepseek-v4-pro" => deepseek_rates(base, timestamp),
+        "deepseek/deepseek-v4-flash" | "deepseek-v4-flash" => deepseek_rates(base, timestamp),
+        "gpt-6-astra" => CodexModelRates {
+            input_per_million: 10.0,
+            cached_input_per_million: 1.0,
+            output_per_million: 50.0,
+            fast_multiplier: 2.0,
+        },
+        "gpt-5.6-sol" | "gpt-5.6" => CodexModelRates {
+            input_per_million: 4.0,
+            cached_input_per_million: 0.4,
+            output_per_million: 20.0,
+            fast_multiplier: 2.0,
+        },
+        "gpt-5.6-terra" => CodexModelRates {
+            input_per_million: 2.0,
+            cached_input_per_million: 0.2,
+            output_per_million: 12.0,
+            fast_multiplier: 2.0,
+        },
+        "gpt-5.6-luna" => CodexModelRates {
+            input_per_million: 0.2,
+            cached_input_per_million: 0.02,
+            output_per_million: 1.2,
+            fast_multiplier: 2.0,
+        },
+        "gpt-5.4-mini" => CodexModelRates {
+            input_per_million: 0.75,
+            cached_input_per_million: 0.075,
+            output_per_million: 4.5,
+            fast_multiplier: 2.0,
+        },
         "gpt-5" | "gpt-5-codex" | "gpt-5.1" | "gpt-5.1-codex" => CodexModelRates {
             input_per_million: 1.25,
             cached_input_per_million: 0.125,
             output_per_million: 10.0,
             fast_multiplier: 2.0,
         },
-        "gpt-5.2" | "gpt-5.2-codex" | "gpt-5.3" | "gpt-5.3-codex" => CodexModelRates {
+        "gpt-5.2" | "gpt-5.2-codex" | "gpt-5.3" | "gpt-5.3-codex" | "codex-auto-review" => CodexModelRates {
             input_per_million: 1.75,
             cached_input_per_million: 0.175,
             output_per_million: 14.0,
@@ -628,44 +670,22 @@ fn codex_estimated_cost_microusd(
             input_per_million: 5.0,
             cached_input_per_million: 0.5,
             output_per_million: 30.0,
-            fast_multiplier: 2.5,
+            fast_multiplier: 2.0,
         },
         "gpt-5.5-pro" => CodexModelRates {
             input_per_million: 30.0,
             cached_input_per_million: 30.0,
             output_per_million: 180.0,
-            fast_multiplier: 2.5,
-        },
-        // Codex can publish a model slug before public pricing catalogs have
-        // caught up. Keep the local spend estimate useful and conservative.
-        _ => CodexModelRates {
-            input_per_million: 1.75,
-            cached_input_per_million: 0.175,
-            output_per_million: 14.0,
             fast_multiplier: 2.0,
         },
+        _ => return None,
     };
 
     // OpenAI's published long-context tiers apply to the whole request.
-    if input > 272_000 {
-        match base {
-            "gpt-5.4" => {
-                rates.input_per_million = 5.0;
-                rates.cached_input_per_million = 0.5;
-                rates.output_per_million = 22.5;
-            }
-            "gpt-5.4-pro" | "gpt-5.5-pro" => {
-                rates.input_per_million = 60.0;
-                rates.cached_input_per_million = 60.0;
-                rates.output_per_million = 270.0;
-            }
-            "gpt-5.5" => {
-                rates.input_per_million = 10.0;
-                rates.cached_input_per_million = 1.0;
-                rates.output_per_million = 45.0;
-            }
-            _ => {}
-        }
+    if input > 272_000 && openai_uses_long_context_rates(base) {
+        rates.input_per_million *= 2.0;
+        rates.cached_input_per_million *= 2.0;
+        rates.output_per_million *= 1.5;
     }
     let multiplier = if fast_service_tier {
         rates.fast_multiplier
@@ -685,24 +705,84 @@ fn codex_cache_savings_microusd(
     model: Option<&str>,
     cached_input: u64,
     fast_service_tier: bool,
+    timestamp: DateTime<Utc>,
 ) -> u64 {
     if cached_input == 0 {
         return 0;
     }
-    let model = model.unwrap_or("gpt-5.3-codex").trim().to_ascii_lowercase();
+    let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) else {
+        return 0;
+    };
+    let model = model.to_ascii_lowercase();
     let base = codex_price_model_name(&model);
     let rates = match base {
+        "deepseek/deepseek-v4-pro" | "deepseek-v4-pro" => {
+            let rates = deepseek_rates(base, timestamp);
+            (rates.input_per_million, rates.cached_input_per_million, rates.fast_multiplier)
+        }
+        "deepseek/deepseek-v4-flash" | "deepseek-v4-flash" => {
+            let rates = deepseek_rates(base, timestamp);
+            (rates.input_per_million, rates.cached_input_per_million, rates.fast_multiplier)
+        }
+        "gpt-6-astra" => (10.0, 1.0, 2.0),
+        "gpt-5.6-sol" | "gpt-5.6" => (4.0, 0.4, 2.0),
+        "gpt-5.6-terra" => (2.0, 0.2, 2.0),
+        "gpt-5.6-luna" => (0.2, 0.02, 2.0),
+        "gpt-5.4-mini" => (0.75, 0.075, 2.0),
         "gpt-5" | "gpt-5-codex" | "gpt-5.1" | "gpt-5.1-codex" => (1.25, 0.125, 2.0),
-        "gpt-5.2" | "gpt-5.2-codex" | "gpt-5.3" | "gpt-5.3-codex" => (1.75, 0.175, 2.0),
+        "gpt-5.2" | "gpt-5.2-codex" | "gpt-5.3" | "gpt-5.3-codex" | "codex-auto-review" => (1.75, 0.175, 2.0),
         "gpt-5.4" => (2.5, 0.25, 2.0),
         "gpt-5.4-pro" => (30.0, 30.0, 2.0),
-        "gpt-5.5" => (5.0, 0.5, 2.5),
-        "gpt-5.5-pro" => (30.0, 30.0, 2.5),
-        _ => (1.75, 0.175, 2.0),
+        "gpt-5.5" => (5.0, 0.5, 2.0),
+        "gpt-5.5-pro" => (30.0, 30.0, 2.0),
+        _ => return 0,
     };
     let multiplier = if fast_service_tier { rates.2 } else { 1.0 };
-    let savings = cached_input as f64 * (rates.0 - rates.1) * multiplier / 1_000_000.0;
+    let long_context_multiplier = if openai_uses_long_context_rates(base) {
+        2.0
+    } else {
+        1.0
+    };
+    let savings = cached_input as f64
+        * (rates.0 - rates.1)
+        * multiplier
+        * long_context_multiplier
+        / 1_000_000.0;
     (savings * 1_000_000.0).round().clamp(0.0, u64::MAX as f64) as u64
+}
+
+fn openai_uses_long_context_rates(model: &str) -> bool {
+    matches!(
+        model,
+        "gpt-6-astra"
+            | "gpt-5.6-sol"
+            | "gpt-5.6"
+            | "gpt-5.6-terra"
+            | "gpt-5.6-luna"
+            | "gpt-5.4"
+            | "gpt-5.4-pro"
+            | "gpt-5.5"
+            | "gpt-5.5-pro"
+    )
+}
+
+fn deepseek_rates(model: &str, timestamp: DateTime<Utc>) -> CodexModelRates {
+    let peak = matches!(
+        timestamp.weekday(),
+        Weekday::Mon | Weekday::Tue | Weekday::Wed | Weekday::Thu | Weekday::Fri
+    ) && ((1..4).contains(&timestamp.hour()) || (6..10).contains(&timestamp.hour()));
+    let multiplier = if peak { 2.0 } else { 1.0 };
+    let (input, cached, output) = match model {
+        "deepseek/deepseek-v4-pro" | "deepseek-v4-pro" => (0.66, 0.022, 1.98),
+        "deepseek/deepseek-v4-flash" | "deepseek-v4-flash" => (0.22, 0.007, 0.66),
+        _ => unreachable!("deepseek_rates called for non-DeepSeek model"),
+    };
+    CodexModelRates {
+        input_per_million: input * multiplier,
+        cached_input_per_million: cached * multiplier,
+        output_per_million: output * multiplier,
+        fast_multiplier: 1.0,
+    }
 }
 
 /// Dates in rollout names are model revisions, not new rates. Retain the
@@ -953,6 +1033,7 @@ fn claude_usage_from_line(line: &[u8]) -> Option<CachedClaudeUsageEntry> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|name| !name.is_empty())?;
+    let is_fast = usage_json.get("speed").and_then(Value::as_str) == Some("fast");
     let cost = event
         .get("costUSD")
         .and_then(Value::as_f64)
@@ -965,9 +1046,10 @@ fn claude_usage_from_line(line: &[u8]) -> Option<CachedClaudeUsageEntry> {
                 output_tokens,
                 cache_write_5m,
                 cache_write_1h,
+                is_fast,
             )
         })?;
-    let cache_savings_microusd = claude_cache_savings_microusd(Some(model), cache_read);
+    let cache_savings_microusd = claude_cache_savings_microusd(Some(model), cache_read, is_fast);
     let usage = TokenUsage {
         input_tokens,
         cached_input_tokens: cache_read.min(input_tokens),
@@ -1004,17 +1086,17 @@ fn claude_estimated_cost_usd(
     output: u64,
     cache_write_5m: u64,
     cache_write_1h: u64,
+    fast: bool,
 ) -> Option<f64> {
-    let model = model?.to_ascii_lowercase();
-    let (input_rate, output_rate) = if model.contains("opus") {
-        (15.0, 75.0)
-    } else if model.contains("sonnet") {
-        (3.0, 15.0)
-    } else if model.contains("haiku") {
-        (1.0, 5.0)
+    let model = model?.trim().to_ascii_lowercase().replace('.', "-");
+    let (input_rate, output_rate) = claude_model_rates(&model)?;
+    let fast_multiplier = if fast {
+        claude_fast_multiplier(&model)
     } else {
-        return None;
+        1.0
     };
+    let input_rate = input_rate * fast_multiplier;
+    let output_rate = output_rate * fast_multiplier;
     let uncached_input = input.saturating_sub(cache_read);
     Some(
         (uncached_input as f64 * input_rate
@@ -1026,24 +1108,65 @@ fn claude_estimated_cost_usd(
     )
 }
 
-fn claude_cache_savings_microusd(model: Option<&str>, cache_read: u64) -> u64 {
+fn claude_fast_multiplier(model: &str) -> f64 {
+    if model.starts_with("claude-opus-5") || model.starts_with("claude-opus-4-8") {
+        2.0
+    } else if model.starts_with("claude-opus-4-7") {
+        6.0
+    } else {
+        1.0
+    }
+}
+
+fn claude_model_rates(model: &str) -> Option<(f64, f64)> {
+    if model.starts_with("claude-opus-5")
+        || model.starts_with("claude-opus-4-8")
+        || model.starts_with("claude-opus-4-7")
+        || model.starts_with("claude-opus-4-6")
+        || model.starts_with("claude-opus-4-5")
+    {
+        Some((5.0, 25.0))
+    } else if model.starts_with("claude-opus-4-1") || model.starts_with("claude-opus-4-") {
+        Some((15.0, 75.0))
+    } else if model.starts_with("claude-sonnet-5") {
+        // Anthropic made Sonnet 5's introductory $2/$10 price permanent on
+        // 2026-08-10; the planned September increase was cancelled.
+        Some((2.0, 10.0))
+    } else if model.starts_with("claude-sonnet-4-6")
+        || model.starts_with("claude-sonnet-4-5")
+        || model.starts_with("claude-sonnet-4-")
+    {
+        Some((3.0, 15.0))
+    } else if model.starts_with("claude-haiku-4-5") {
+        Some((1.0, 5.0))
+    } else if model.starts_with("claude-haiku-3-5") {
+        Some((0.8, 4.0))
+    } else {
+        None
+    }
+}
+
+fn claude_cache_savings_microusd(model: Option<&str>, cache_read: u64, fast: bool) -> u64 {
     if cache_read == 0 {
         return 0;
     }
     let Some(model) = model else {
         return 0;
     };
-    let model = model.to_ascii_lowercase();
-    let input_rate = if model.contains("opus") {
-        15.0
-    } else if model.contains("sonnet") {
-        3.0
-    } else if model.contains("haiku") {
-        1.0
-    } else {
+    let model = model.trim().to_ascii_lowercase().replace('.', "-");
+    let Some((input_rate, _)) = claude_model_rates(&model) else {
         return 0;
     };
-    let savings = cache_read as f64 * input_rate * 0.9 / 1_000_000.0;
+    let speed_multiplier = if fast {
+        claude_fast_multiplier(&model)
+    } else {
+        1.0
+    };
+    let savings = cache_read as f64
+        * input_rate
+        * speed_multiplier
+        * 0.9
+        / 1_000_000.0;
     (savings * 1_000_000.0).round().clamp(0.0, u64::MAX as f64) as u64
 }
 
@@ -1110,19 +1233,109 @@ mod tests {
         // Stay under the 272k long-context threshold so this exercises the
         // base rates; the long-context tier has its own test.
         let standard =
-            codex_estimated_cost_microusd(Some("gpt-5.4"), 200_000, 100_000, 100_000, false)
-                .unwrap();
-        assert_eq!(standard, 1_775_000);
-        let fast = codex_estimated_cost_microusd(Some("gpt-5.4"), 200_000, 100_000, 100_000, true)
+            codex_estimated_cost_microusd(
+                Some("gpt-5.4"),
+                200_000,
+                100_000,
+                100_000,
+                false,
+                Utc::now(),
+            )
             .unwrap();
+        assert_eq!(standard, 1_775_000);
+        let fast = codex_estimated_cost_microusd(
+            Some("gpt-5.4"),
+            200_000,
+            100_000,
+            100_000,
+            true,
+            Utc::now(),
+        )
+        .unwrap();
         assert_eq!(fast, 3_550_000);
-        assert!(codex_estimated_cost_microusd(Some("unknown-model"), 1, 0, 1, false).is_some());
+        assert!(
+            codex_estimated_cost_microusd(Some("unknown-model"), 1, 0, 1, false, Utc::now())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn prices_current_openai_models_from_their_public_api_rates() {
+        let astra = codex_estimated_cost_microusd(
+            Some("gpt-6-astra"),
+            200_000,
+            100_000,
+            100_000,
+            false,
+            Utc::now(),
+        )
+        .unwrap();
+        assert_eq!(astra, 6_100_000);
+
+        let luna = codex_estimated_cost_microusd(
+            Some("gpt-5.6-luna"),
+            200_000,
+            100_000,
+            100_000,
+            false,
+            Utc::now(),
+        )
+        .unwrap();
+        assert_eq!(luna, 142_000);
+
+        let astra_long_context = codex_estimated_cost_microusd(
+            Some("gpt-6-astra"),
+            300_000,
+            100_000,
+            100_000,
+            false,
+            Utc::now(),
+        )
+        .unwrap();
+        assert_eq!(astra_long_context, 11_700_000);
+    }
+
+    #[test]
+    fn prices_deepseek_by_the_official_peak_schedule() {
+        let peak = DateTime::parse_from_rfc3339("2026-09-08T02:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let off_peak = DateTime::parse_from_rfc3339("2026-09-08T05:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let peak_cost = codex_estimated_cost_microusd(
+            Some("deepseek/deepseek-v4-pro"),
+            200_000,
+            100_000,
+            100_000,
+            false,
+            peak,
+        )
+        .unwrap();
+        let off_peak_cost = codex_estimated_cost_microusd(
+            Some("deepseek/deepseek-v4-pro"),
+            200_000,
+            100_000,
+            100_000,
+            false,
+            off_peak,
+        )
+        .unwrap();
+        assert_eq!(peak_cost, 532_400);
+        assert_eq!(off_peak_cost, 266_200);
     }
 
     #[test]
     fn applies_codex_long_context_rate_to_the_whole_request() {
-        let cost =
-            codex_estimated_cost_microusd(Some("gpt-5.4"), 300_000, 0, 100_000, false).unwrap();
+        let cost = codex_estimated_cost_microusd(
+            Some("gpt-5.4"),
+            300_000,
+            0,
+            100_000,
+            false,
+            Utc::now(),
+        )
+        .unwrap();
         assert_eq!(cost, 3_750_000);
     }
 
@@ -1145,6 +1358,21 @@ mod tests {
         assert_eq!(entry.usage.cached_input_tokens, 40);
         assert_eq!(entry.usage.estimated_api_value_usd(), Some(0.0125));
         assert!(entry.has_speed);
+    }
+
+    #[test]
+    fn prices_current_claude_models_by_exact_model_family() {
+        let opus =
+            claude_estimated_cost_usd(Some("claude-opus-5"), 100, 40, 25, 0, 0, false).unwrap();
+        assert!((opus - 0.000945).abs() < f64::EPSILON);
+
+        let sonnet =
+            claude_estimated_cost_usd(Some("claude-sonnet-5"), 100, 40, 25, 0, 0, false).unwrap();
+        assert!((sonnet - 0.000378).abs() < f64::EPSILON);
+
+        let opus_fast =
+            claude_estimated_cost_usd(Some("claude-opus-5"), 100, 40, 25, 0, 0, true).unwrap();
+        assert!((opus_fast - 0.001890).abs() < f64::EPSILON);
     }
 
     #[test]

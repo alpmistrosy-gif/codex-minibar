@@ -81,6 +81,8 @@ pub struct BreakdownRow {
     pub provider: Option<ProviderKind>,
     pub cost_microusd: u64,
     pub tokens: u64,
+    pub requests: u64,
+    pub priced_requests: u64,
     pub share: f64,
     pub by_provider: BTreeMap<ProviderKind, TokenUsage>,
 }
@@ -396,11 +398,15 @@ fn assemble_overview_snapshot(
                 let at = start_hour + Duration::hours(offset);
                 let mut cost = 0_u64;
                 let mut tokens = 0_u64;
+                let mut requests = 0_u64;
+                let mut priced_requests = 0_u64;
                 let mut by_provider = BTreeMap::new();
                 for (provider, hours) in &provider_hourly {
                     if let Some(usage) = hours.get(&at) {
                         cost = cost.saturating_add(usage.estimated_cost_microusd);
                         tokens = tokens.saturating_add(usage.total_tokens());
+                        requests = requests.saturating_add(usage.requests);
+                        priced_requests = priced_requests.saturating_add(usage.priced_requests);
                         by_provider.insert(*provider, usage.clone());
                     }
                 }
@@ -414,6 +420,8 @@ fn assemble_overview_snapshot(
                     provider: None,
                     cost_microusd: cost,
                     tokens,
+                    requests,
+                    priced_requests,
                     share: metric_value as f64 / total_metric as f64 * 100.0,
                     by_provider,
                 }
@@ -451,12 +459,12 @@ fn assemble_overview_snapshot(
             .iter()
             .rev()
             .map(|(date, providers)| {
-                let cost = providers.values().fold(0_u64, |total, usage| {
-                    total.saturating_add(usage.estimated_cost_microusd)
+                let usage = providers.values().fold(TokenUsage::default(), |mut total, usage| {
+                    total.add(usage);
+                    total
                 });
-                let tokens = providers.values().fold(0_u64, |total, usage| {
-                    total.saturating_add(usage.total_tokens())
-                });
+                let cost = usage.estimated_cost_microusd;
+                let tokens = usage.total_tokens();
                 let metric_value = match metric {
                     OverviewMetric::Cost => cost,
                     OverviewMetric::Tokens => tokens,
@@ -467,6 +475,8 @@ fn assemble_overview_snapshot(
                     provider: None,
                     cost_microusd: cost,
                     tokens,
+                    requests: usage.requests,
+                    priced_requests: usage.priced_requests,
                     share: metric_value as f64 / total_metric as f64 * 100.0,
                     by_provider: providers.clone(),
                 }
@@ -504,6 +514,8 @@ fn assemble_overview_snapshot(
             provider: Some(provider),
             cost_microusd: usage.estimated_cost_microusd,
             tokens: usage.total_tokens(),
+            requests: usage.requests,
+            priced_requests: usage.priced_requests,
             share: match metric {
                 OverviewMetric::Cost => usage.estimated_cost_microusd as f64 / total_metric as f64 * 100.0,
                 OverviewMetric::Tokens => usage.total_tokens() as f64 / total_metric as f64 * 100.0,

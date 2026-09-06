@@ -33,7 +33,7 @@ const CURSOR_CLIENT_ID: &str = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB";
 const ACCESS_TOKEN_KEY: &str = "cursorAuth/accessToken";
 const REFRESH_TOKEN_KEY: &str = "cursorAuth/refreshToken";
 const USAGE_EXPORT_PATH: &str = "/api/dashboard/export-usage-events-csv";
-const USAGE_CACHE_VERSION: u8 = 3;
+const USAGE_CACHE_VERSION: u8 = 4;
 const USAGE_CACHE_TTL: ChronoDuration = ChronoDuration::minutes(10);
 
 /// Detect the Cursor desktop application from its local installation or its
@@ -341,8 +341,12 @@ fn usage_statistics_from_csv(csv_text: &str, history_days: u16) -> Result<UsageS
         // row count so the common usage card can still report activity.
         usage.requests = usage.requests.saturating_add(1);
         let row_cost = cursor_estimated_cost_microusd(model, cache_write, input, cache_read, output);
-        usage.estimated_cost_microusd = usage.estimated_cost_microusd.saturating_add(row_cost);
-        usage.priced_requests = usage.priced_requests.saturating_add(1);
+        usage.estimated_cost_microusd = usage
+            .estimated_cost_microusd
+            .saturating_add(row_cost.unwrap_or_default());
+        usage.priced_requests = usage
+            .priced_requests
+            .saturating_add(u64::from(row_cost.is_some()));
 
         let row_usage = TokenUsage {
             input_tokens: input
@@ -351,8 +355,8 @@ fn usage_statistics_from_csv(csv_text: &str, history_days: u16) -> Result<UsageS
             cached_input_tokens: cache_read,
             output_tokens: output,
             requests: 1,
-            estimated_cost_microusd: row_cost,
-            priced_requests: 1,
+            estimated_cost_microusd: row_cost.unwrap_or_default(),
+            priced_requests: u64::from(row_cost.is_some()),
             ..Default::default()
         };
         let model_key = normalize_cursor_model_name(model);
@@ -394,7 +398,7 @@ fn usage_statistics_from_csv(csv_text: &str, history_days: u16) -> Result<UsageS
 /// suffixes (`cursor-grok-4.6-high-fast`, `4.6-medium`). Those are the same
 /// model for usage rollup, so they become `grok-4.6`.
 pub(crate) fn normalize_cursor_model_name(model: &str) -> String {
-    let mut name = model.trim().to_ascii_lowercase();
+    let mut name = model.trim().to_ascii_lowercase().trim_end_matches('-').to_owned();
     if name.is_empty() {
         return "unknown".into();
     }
@@ -434,37 +438,61 @@ fn cursor_estimated_cost_microusd(
     input: u64,
     cache_read: u64,
     output: u64,
-) -> u64 {
-    let model = model.trim().to_ascii_lowercase();
-    let (input_rate, cache_read_rate, output_rate) = if model.contains("claude-opus") {
-        (15.0, 1.5, 75.0)
-    } else if model.contains("claude-sonnet") {
-        (3.0, 0.3, 15.0)
-    } else if model.contains("claude-haiku") {
-        (1.0, 0.1, 5.0)
-    } else if model.contains("gemini-2.5-pro") {
-        (1.25, 0.3125, 10.0)
-    } else if model.contains("gemini") {
-        (0.3, 0.03, 2.5)
-    } else if model.contains("gpt-5.4") {
-        (2.5, 0.25, 15.0)
-    } else if model.contains("gpt-5.3") || model.contains("gpt-5.2") {
-        (1.75, 0.175, 14.0)
-    } else if model.contains("gpt-5") {
-        (1.25, 0.125, 10.0)
-    } else if model.contains("composer") || model == "auto" {
-        (1.25, 0.25, 6.0)
-    } else {
-        // Cursor occasionally exports a new alias before its public price is
-        // published. Use the current Auto baseline so usage never vanishes.
-        (1.25, 0.25, 6.0)
+) -> Option<u64> {
+    let raw_model = model.trim().to_ascii_lowercase();
+    let model = normalize_cursor_model_name(&raw_model);
+    let fast = raw_model.contains("-fast") || raw_model.contains("_fast");
+    // Rates verified against Cursor's Models & Pricing page on 2026-09-06.
+    // Cache-write '-' in Cursor's table means that the write column is free.
+    let (input_rate, cache_write_rate, cache_read_rate, output_rate) = match model.as_str() {
+        "grok-4.6" => {
+            if fast {
+                (4.0, 0.0, 1.0, 12.0)
+            } else {
+                (2.0, 0.0, 0.5, 6.0)
+            }
+        }
+        "grok-4.5" => {
+            if fast {
+                (4.0, 0.0, 1.0, 18.0)
+            } else {
+                (2.0, 0.0, 0.5, 6.0)
+            }
+        }
+        "composer-2.5" => {
+            if fast {
+                (3.0, 0.0, 0.5, 15.0)
+            } else {
+                (0.5, 0.0, 0.2, 2.5)
+            }
+        }
+        // Cursor documents this fixed-rate bucket as Legacy Enterprise Auto
+        // through 2026-09-07; its cache-write rate is explicitly $1.25/M.
+        "auto" => (1.25, 1.25, 0.25, 6.0),
+        "claude-opus-5" | "claude-opus-4-8" => (5.0, 6.25, 0.5, 25.0),
+        "claude-sonnet-5" => (2.0, 2.5, 0.2, 10.0),
+        "gpt-6-astra" => (10.0, 12.5, 1.0, 50.0),
+        "gpt-5.6-luna" => (0.2, 0.25, 0.02, 1.2),
+        "gpt-5.6-sol" | "gpt-5.6" => (4.0, 5.0, 0.4, 20.0),
+        "gpt-5.6-terra" => (2.0, 2.5, 0.2, 12.0),
+        "gemini-3.1-pro" => (2.0, 2.5, 0.2, 12.0),
+        "gemini-3.8-flash" => (0.75, 0.9375, 0.075, 3.5),
+        "gemini-2.5-pro" => (1.25, 1.5625, 0.3125, 10.0),
+        "gpt-5.4" => (2.5, 3.125, 0.25, 15.0),
+        "gpt-5.4-mini" => (0.75, 0.9375, 0.075, 4.5),
+        "gpt-5.3" | "gpt-5.2" => (1.75, 2.1875, 0.175, 14.0),
+        "gpt-5" => (1.25, 1.5625, 0.125, 10.0),
+        // Cursor's Grok Bot labels describe a cloud product, not a public API
+        // model. Cursor does not publish a token price for these buckets.
+        "grok-bot-automation" | "grok-bot-cua" | "grok-bot-default" => return None,
+        _ => return None,
     };
-    let cost = (cache_write as f64 * input_rate * 1.25
+    let cost = (cache_write as f64 * cache_write_rate
         + input as f64 * input_rate
         + cache_read as f64 * cache_read_rate
         + output as f64 * output_rate)
         / 1_000_000.0;
-    (cost * 1_000_000.0).round().clamp(0.0, u64::MAX as f64) as u64
+    Some((cost * 1_000_000.0).round().clamp(0.0, u64::MAX as f64) as u64)
 }
 
 fn cursor_export_timestamp(value: &str) -> Option<(NaiveDate, Option<DateTime<Local>>)> {
@@ -804,6 +832,22 @@ mod tests {
                 .and_then(|(_, timestamp)| timestamp)
                 .map(|timestamp| timestamp.hour()),
             Some(12)
+        );
+    }
+
+    #[test]
+    fn prices_current_cursor_models_and_leaves_grok_bot_unpriced() {
+        assert_eq!(
+            cursor_estimated_cost_microusd("grok-4.6", 0, 100_000, 50_000, 10_000),
+            Some(285_000)
+        );
+        assert_eq!(
+            cursor_estimated_cost_microusd("composer-2.5-fast", 0, 100_000, 50_000, 10_000),
+            Some(475_000)
+        );
+        assert_eq!(
+            cursor_estimated_cost_microusd("grok-bot-automation", 0, 100_000, 50_000, 10_000),
+            None
         );
     }
 
