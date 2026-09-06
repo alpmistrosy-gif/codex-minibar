@@ -21,6 +21,7 @@ use crate::theme::{CONTROL_FAST_ANIMATION, CONTROL_NORMAL_ANIMATION, duration};
 use crate::updater::{
     ISSUES_URL, RELEASES_URL, REPO_URL, UpdateController, UpdatePhase, current_version,
 };
+use crate::worker::UsageAction;
 use anyhow::Context;
 use std::{
     cell::RefCell,
@@ -147,6 +148,7 @@ pub fn publish_discovered_popup_bricks(
 
 pub fn open(
     settings_tx: Sender<Settings>,
+    usage_actions_tx: Sender<UsageAction>,
     updates: Arc<UpdateController>,
 ) -> windows_core::Result<()> {
     HOST.with(|slot| {
@@ -181,6 +183,7 @@ pub fn open(
                     cx,
                     Arc::clone(&view_settings),
                     settings_tx.clone(),
+                    usage_actions_tx.clone(),
                     Arc::clone(&updates),
                 )
             }),
@@ -242,6 +245,7 @@ pub fn render(
     cx: &mut RenderCx,
     settings: Arc<Settings>,
     settings_tx: Sender<Settings>,
+    usage_actions_tx: Sender<UsageAction>,
     updates: Arc<UpdateController>,
 ) -> Element {
     let color_scheme = cx.use_color_scheme();
@@ -759,6 +763,7 @@ pub fn render(
         theme_navigation_guard: theme_navigation_guard.clone(),
         theme_navigation_guard_timer: theme_navigation_guard_timer.clone(),
         settings_tx: settings_tx.clone(),
+        usage_actions_tx: usage_actions_tx.clone(),
         ui_dispatcher: ui_dispatcher.clone(),
         updates: updates.clone(),
     };

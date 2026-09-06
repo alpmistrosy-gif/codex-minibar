@@ -48,6 +48,10 @@ pub struct AppState {
     /// Live settings pushes from the settings window; drained by the tray bridge.
     pub settings_rx: Mutex<Option<Receiver<Settings>>>,
     pub settings_tx: Sender<Settings>,
+    /// Destructive usage actions are serialized by the tray bridge and then
+    /// fanned out to every provider usage worker.
+    pub usage_actions_rx: Mutex<Option<Receiver<UsageAction>>>,
+    pub usage_actions_tx: Sender<UsageAction>,
     pub updates: Arc<UpdateController>,
 }
 
@@ -89,6 +93,14 @@ impl AppState {
     ) {
         if let Ok(mut current) = self.limits.lock() {
             current.get_mut(provider).usage = usage;
+        }
+    }
+
+    pub(super) fn clear_usage_snapshot(&self) {
+        if let Ok(mut limits) = self.limits.lock() {
+            for provider in ProviderKind::ALL {
+                limits.get_mut(provider).usage = crate::usage::UsageStatistics::default();
+            }
         }
     }
 
@@ -201,6 +213,7 @@ pub(super) struct UiState {
     pub(super) time_format: TimeFormat,
     pub(super) last_activation: String,
     pub(super) provider_errors: HashMap<ProviderKind, String>,
+    pub(super) usage_errors: HashMap<ProviderKind, String>,
     pub(super) error: Option<String>,
     /// Changes for every settings transaction so layout-sensitive toggles
     /// force a fresh body measurement and popup resize.
@@ -249,6 +262,7 @@ impl Default for UiState {
             time_format: TimeFormat::from_windows(),
             last_activation: "Never".into(),
             provider_errors: HashMap::new(),
+            usage_errors: HashMap::new(),
             error: None,
             settings_revision: 0,
             limits_revision: 0,
@@ -318,6 +332,18 @@ impl UiState {
 
     pub(super) fn has_provider_error(&self, provider: ProviderKind) -> bool {
         self.provider_errors.contains_key(&provider)
+    }
+
+    pub(super) fn set_usage_error(&mut self, provider: ProviderKind, error: impl Into<String>) {
+        self.usage_errors.insert(provider, error.into());
+    }
+
+    pub(super) fn clear_usage_error(&mut self, provider: ProviderKind) {
+        self.usage_errors.remove(&provider);
+    }
+
+    pub(super) fn usage_error(&self, provider: ProviderKind) -> Option<&str> {
+        self.usage_errors.get(&provider).map(String::as_str)
     }
 
     pub(super) fn request_started(&mut self, provider: ProviderKind, kind: RequestKind) {

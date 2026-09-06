@@ -143,6 +143,12 @@ pub fn start_provider_worker(
                 WorkerEvent::UsageUpdated(usage) => {
                     Some(WorkerEvent::ProviderUsageUpdated(provider, usage))
                 }
+                WorkerEvent::UsageDataCleared(generation) => {
+                    Some(WorkerEvent::ProviderUsageDataCleared(provider, generation))
+                }
+                WorkerEvent::UsageRefreshFailed(error) => {
+                    Some(WorkerEvent::ProviderUsageRefreshFailed(provider, error))
+                }
                 WorkerEvent::ActivationStarted => {
                     Some(WorkerEvent::ProviderActivationStarted(provider))
                 }

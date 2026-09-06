@@ -447,11 +447,20 @@ pub fn app(cx: &mut RenderCx, state: Arc<AppState>) -> Element {
                 .collect();
             let snapshot =
                 build_overview_snapshot(&limits, &enabled_spend, overview_metric, overview_range);
+            let usage_recalculating = ui
+                .active_requests
+                .iter()
+                .any(|(_, kind)| *kind == RequestKind::Usage);
+            let usage_error = enabled_spend
+                .iter()
+                .find_map(|provider| ui.usage_error(*provider));
             body.push(crate::popup_usage::overview_page(
                 &snapshot,
                 overview_metric,
                 overview_range,
                 overview_breakdown,
+                usage_recalculating,
+                usage_error,
                 overview_chart_hover,
                 color_scheme,
                 ui.use_colored_provider_icons,
@@ -774,6 +783,7 @@ pub fn app(cx: &mut RenderCx, state: Arc<AppState>) -> Element {
                             move || {
                                 if let Err(error) = crate::settings_window::open(
                                     settings_tx.clone(),
+                                    state.usage_actions_tx.clone(),
                                     updates.clone(),
                                 ) {
                                     eprintln!("Could not open settings window: {error:?}");

@@ -265,7 +265,15 @@ fn lookup_rate(
     provider: ProviderKind,
     raw_model: &str,
 ) -> Option<ModelRate> {
-    let key = raw_model.to_ascii_lowercase();
+    let mut key = raw_model.to_ascii_lowercase();
+    if provider == ProviderKind::Cursor {
+        // Cursor's Auto and Composer lanes are billed against the same
+        // underlying model bucket as Grok 4.5. LiteLLM intentionally has no
+        // public Cursor-specific entries for these UI labels.
+        if matches!(key.as_str(), "auto" | "composer-2.5") {
+            key = "grok-4.5".into();
+        }
+    }
     if is_unpriceable_model(&key) {
         return None;
     }
@@ -279,9 +287,9 @@ fn lookup_rate(
             format!("cursor/{key}"),
             format!("openai/{key}"),
             format!("anthropic/{key}"),
-                format!("google/{key}"),
-                format!("xai/{key}"),
-                format!("x-ai/{key}"),
+            format!("google/{key}"),
+            format!("xai/{key}"),
+            format!("x-ai/{key}"),
         ],
         _ => Vec::new(),
     };
@@ -365,5 +373,43 @@ mod tests {
             cost_for_catalog(&catalog, ProviderKind::Cursor, Some("example"), 0, 1, 0, 1),
             None
         );
+    }
+
+    #[test]
+    fn cursor_reuses_the_same_anthropic_rate_for_a_bare_model_name() {
+        let catalog = catalog(json!({
+            "anthropic/claude-opus-5": {
+                "input_cost_per_token": 0.000005,
+                "output_cost_per_token": 0.000025
+            }
+        }));
+        assert_eq!(
+            cost_for_catalog(
+                &catalog,
+                ProviderKind::Cursor,
+                Some("claude-opus-5"),
+                0,
+                1_000,
+                0,
+                100,
+            ),
+            Some(7_500)
+        );
+    }
+
+    #[test]
+    fn cursor_maps_auto_and_composer_to_grok_rate() {
+        let catalog = catalog(json!({
+            "xai/grok-4.5": {
+                "input_cost_per_token": 0.000002,
+                "output_cost_per_token": 0.000006
+            }
+        }));
+        for model in ["auto", "composer-2.5"] {
+            assert_eq!(
+                cost_for_catalog(&catalog, ProviderKind::Cursor, Some(model), 0, 1_000, 0, 100),
+                Some(2_600)
+            );
+        }
     }
 }

@@ -34,7 +34,7 @@ use crate::{
     tray::{TrayManager, TrayMenuAction},
     updater::{UpdateController, UpdatePhase},
     usage_overview::{BreakdownMode, OverviewMetric, OverviewRange, build_overview_snapshot},
-    worker::{RequestKind, WorkerCommand, WorkerEvent},
+    worker::{RequestKind, UsageAction, WorkerCommand, WorkerEvent},
 };
 
 #[cfg(windows)]

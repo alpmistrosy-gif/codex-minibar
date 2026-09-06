@@ -23,6 +23,8 @@ pub fn overview_page(
     metric: OverviewMetric,
     range: OverviewRange,
     breakdown: BreakdownMode,
+    usage_recalculating: bool,
+    usage_error: Option<&str>,
     chart_hover: Option<usize>,
     color_scheme: ColorScheme,
     use_colored_provider_icons: bool,
@@ -33,7 +35,7 @@ pub fn overview_page(
 ) -> Element {
     if snapshot.providers.is_empty() {
         return vstack((
-            body_strong("Usage"),
+            usage_title_row(None, usage_recalculating, usage_error),
             caption("Turn on a provider in Settings to see local API usage.")
                 .foreground(ThemeRef::TertiaryText)
                 .wrap(),
@@ -92,6 +94,8 @@ pub fn overview_page(
             &range_label,
             metric,
             range,
+            usage_recalculating,
+            usage_error,
             set_metric,
             set_range,
             &set_chart_hover,
@@ -151,6 +155,8 @@ fn usage_header(
     range_label: &str,
     metric: OverviewMetric,
     range: OverviewRange,
+    usage_recalculating: bool,
+    usage_error: Option<&str>,
     set_metric: SetState<OverviewMetric>,
     set_range: SetState<OverviewRange>,
     set_chart_hover: &SetState<Option<usize>>,
@@ -158,14 +164,8 @@ fn usage_header(
     let clear_hover = set_chart_hover.clone();
     vstack((
         grid((
-            hstack((
-                body_strong("Usage").vertical_alignment(VerticalAlignment::Center),
-                body(range_label)
-                    .foreground(ThemeRef::TertiaryText)
-                    .vertical_alignment(VerticalAlignment::Center),
-            ))
-            .spacing(8.0)
-            .vertical_alignment(VerticalAlignment::Top),
+            usage_title_row(Some(range_label), usage_recalculating, usage_error)
+                .grid_column(0),
             segmented_control(
                 "usage-metric",
                 vec![
@@ -195,9 +195,86 @@ fn usage_header(
         .columns([GridLength::Star(1.0), GridLength::Auto]),
         period_switcher(range, set_range, clear_hover),
     ))
-    .spacing(8.0)
+    .spacing(12.0)
     .with_key("usage-header")
     .into()
+}
+
+fn usage_refresh_indicator(recalculating: bool, error: Option<&str>) -> Element {
+    if let Some(error) = error {
+        return caption("⚠")
+            .foreground(ThemeRef::Accent)
+            .tooltip(error.to_owned())
+            .width(16.0)
+            .horizontal_alignment(HorizontalAlignment::Center)
+            .with_key("usage-refresh-error")
+            .into();
+    }
+
+    if !recalculating {
+        return Element::Empty;
+    }
+
+    let mut spinner = ProgressRing::indeterminate();
+    spinner.is_active = recalculating;
+    spinner
+        .width(16.0)
+        .height(16.0)
+        .foreground(ThemeRef::Accent)
+        .opacity(if recalculating { 1.0 } else { 0.0 })
+        .with_opacity_transition(crate::theme::duration(
+            crate::theme::CONTROL_FAST_ANIMATION,
+        ))
+        .with_key("usage-refresh-spinner")
+        .into()
+}
+
+fn usage_title_row(
+    range_label: Option<&str>,
+    recalculating: bool,
+    error: Option<&str>,
+) -> Element {
+    let mut title_parts: Vec<Element> = vec![
+        body_strong("Usage")
+            .vertical_alignment(VerticalAlignment::Top)
+            .into(),
+    ];
+    if let Some(range_label) = range_label {
+        title_parts.push(
+            body(range_label)
+                .foreground(ThemeRef::TertiaryText)
+                .vertical_alignment(VerticalAlignment::Top)
+                .into(),
+        );
+    }
+    let title_offset = if recalculating || error.is_some() {
+        24.0
+    } else {
+        0.0
+    };
+    let title = hstack(title_parts)
+        .spacing(8.0)
+        .relative_align_left()
+        .relative_align_top()
+        .margin(Thickness {
+            left: 0.0,
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+        })
+        .translation_x(title_offset)
+        .with_translation_transition(crate::theme::duration(
+            crate::theme::CONTROL_FAST_ANIMATION,
+        ));
+    let indicator = usage_refresh_indicator(recalculating, error)
+        .relative_align_left()
+        .relative_align_v_center();
+    relative_panel(vec![indicator, title.into()])
+        .height(24.0)
+        .horizontal_alignment(HorizontalAlignment::Stretch)
+        .vertical_alignment(VerticalAlignment::Stretch)
+        .with_key("usage-title-row")
+        .into()
 }
 
 fn period_switcher(

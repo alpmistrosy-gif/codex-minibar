@@ -34,7 +34,7 @@ const CURSOR_CLIENT_ID: &str = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB";
 const ACCESS_TOKEN_KEY: &str = "cursorAuth/accessToken";
 const REFRESH_TOKEN_KEY: &str = "cursorAuth/refreshToken";
 const USAGE_EXPORT_PATH: &str = "/api/dashboard/export-usage-events-csv";
-const USAGE_CACHE_VERSION: u8 = 5;
+const USAGE_CACHE_VERSION: u8 = 8;
 const USAGE_CACHE_TTL: ChronoDuration = ChronoDuration::minutes(10);
 
 /// Detect the Cursor desktop application from its local installation or its
@@ -231,11 +231,17 @@ impl CursorClient {
             // An export can be delayed or intermittently rejected by Cursor.
             // Keep showing the last verified activity rather than making a
             // healthy usage card disappear on a transient network failure.
-            Err(error) => store::with_store(|store| {
-                store.load_usage_daily(ProviderKind::Cursor, history_days)
-            })
-            .context("refresh Cursor usage export")
-            .or(Err(error)),
+            Err(error) => {
+                let cached = store::with_store(|store| {
+                    store.load_usage_daily(ProviderKind::Cursor, history_days)
+                })
+                .context("read cached Cursor usage after export failure")?;
+                if cached.has_data() {
+                    Ok(cached)
+                } else {
+                    Err(error.context("refresh Cursor usage export with no cached data"))
+                }
+            }
         }
     }
 
@@ -278,6 +284,12 @@ impl UsageProvider for CursorClient {
 
     fn refresh_usage_statistics(&mut self, history_days: u16) -> Result<UsageStatistics> {
         self.usage_statistics(history_days)
+    }
+
+    /// Cursor's usage export is independent of the quota endpoints. A
+    /// temporary limits failure must not suppress the local usage scan.
+    fn refresh_without_limits(&self) -> bool {
+        true
     }
 }
 
@@ -341,7 +353,14 @@ fn usage_statistics_from_csv(csv_text: &str, history_days: u16) -> Result<UsageS
         // Export rows are aggregates rather than individual requests; retain a
         // row count so the common usage card can still report activity.
         usage.requests = usage.requests.saturating_add(1);
-        let row_cost = cursor_estimated_cost_microusd(model, cache_write, input, cache_read, output);
+        let model_key = normalize_cursor_model_name(model);
+        let row_cost = cursor_estimated_cost_microusd(
+            &model_key,
+            cache_write,
+            input,
+            cache_read,
+            output,
+        );
         usage.estimated_cost_microusd = usage
             .estimated_cost_microusd
             .saturating_add(row_cost.unwrap_or_default());
@@ -360,7 +379,6 @@ fn usage_statistics_from_csv(csv_text: &str, history_days: u16) -> Result<UsageS
             priced_requests: u64::from(row_cost.is_some()),
             ..Default::default()
         };
-        let model_key = normalize_cursor_model_name(model);
         model_daily
             .entry((model_key, date))
             .or_default()
@@ -378,6 +396,9 @@ fn usage_statistics_from_csv(csv_text: &str, history_days: u16) -> Result<UsageS
         .map(|((model, date), usage)| (model, date, usage))
         .collect::<Vec<_>>();
     let hourly_rows = hourly.into_iter().collect::<Vec<_>>();
+    if daily.is_empty() {
+        bail!("Cursor usage export contained no valid usage rows");
+    }
     store::with_store(|store| {
         store.replace_usage_model_daily(ProviderKind::Cursor, &model_rows)?;
         if !hourly_rows.is_empty() {
@@ -796,6 +817,11 @@ mod tests {
             cursor_estimated_cost_microusd("grok-4.6", 0, 100_000, 50_000, 10_000),
             None
         );
+    }
+
+    #[test]
+    fn cursor_usage_can_refresh_without_quota_data() {
+        assert!(CursorClient::new().refresh_without_limits());
     }
 
     #[test]

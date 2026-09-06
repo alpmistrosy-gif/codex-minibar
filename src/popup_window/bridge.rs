@@ -29,6 +29,11 @@ pub(super) fn start_background_bridge(
         .lock()
         .ok()
         .and_then(|mut slot| slot.take());
+    let usage_actions_rx = state
+        .usage_actions_rx
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take());
     let settings_tx = state.settings_tx.clone();
     let updates = Arc::clone(&state.updates);
     let mut check_for_updates = state.settings.check_for_updates;
@@ -39,6 +44,8 @@ pub(super) fn start_background_bridge(
         let fallback_attempt = state.last_activation_at;
         let mut notification_settings = state.settings.notifications.clone();
         let mut limit_notifications = HashMap::<ProviderKind, LimitNotificationTracker>::new();
+        let mut usage_clear_generation = 0_u64;
+        let mut pending_usage_clear: Option<(u64, Vec<ProviderKind>)> = None;
         let mut update_phase = updates.snapshot();
         let mut ui = UiState {
             theme: state.settings.theme,
@@ -265,6 +272,46 @@ pub(super) fn start_background_bridge(
             }
         };
 
+        let drain_usage_actions = |ui: &mut UiState,
+                                   set_ui: &AsyncSetState<UiState>,
+                                   generation: &mut u64,
+                                   pending: &mut Option<(u64, Vec<ProviderKind>)>| {
+            let Some(actions) = usage_actions_rx.as_ref() else {
+                return;
+            };
+            while let Ok(UsageAction::ClearData) = actions.try_recv() {
+                // One clear operation is enough. The button remains safe to
+                // click while a previous provider barrier is draining.
+                if pending.is_some() {
+                    continue;
+                }
+                *generation = generation.wrapping_add(1);
+                let clear_generation = *generation;
+                let targets = state
+                    .worker_commands()
+                    .into_iter()
+                    .filter_map(|(provider, commands)| {
+                        commands
+                            .send(WorkerCommand::ClearUsageData(clear_generation))
+                            .is_ok()
+                            .then_some(provider)
+                    })
+                    .collect::<Vec<_>>();
+                state.clear_usage_snapshot();
+                ui.observe_limits_update();
+                publish_popup_ui(set_ui, ui);
+
+                if targets.is_empty() {
+                    if let Err(error) = crate::store::with_store(|store| store.clear_usage_data()) {
+                        ui.set_popup_error(format!("Could not clear usage data: {error:#}"));
+                        publish_popup_ui(set_ui, ui);
+                    }
+                } else {
+                    *pending = Some((clear_generation, targets));
+                }
+            }
+        };
+
         let drain_updates = |ui: &mut UiState,
                              set_ui: &AsyncSetState<UiState>,
                              tray: &mut TrayManager,
@@ -300,6 +347,12 @@ pub(super) fn start_background_bridge(
             loop {
                 popup::pump_messages();
                 drain_toast_update();
+                drain_usage_actions(
+                    &mut ui,
+                    &set_ui,
+                    &mut usage_clear_generation,
+                    &mut pending_usage_clear,
+                );
                 if let Err(error) = tray.refresh_system_theme(&widgets, &state.current_limits()) {
                     ui.set_popup_error(error.to_string());
                     publish_popup_ui(&set_ui, &ui);
@@ -333,6 +386,12 @@ pub(super) fn start_background_bridge(
         loop {
             popup::pump_messages();
             drain_toast_update();
+            drain_usage_actions(
+                &mut ui,
+                &set_ui,
+                &mut usage_clear_generation,
+                &mut pending_usage_clear,
+            );
             if let Err(error) = tray.refresh_system_theme(&widgets, &state.current_limits()) {
                 ui.set_popup_error(error.to_string());
                 publish_popup_ui(&set_ui, &ui);
@@ -442,10 +501,36 @@ pub(super) fn start_background_bridge(
                         usage.history.total_tokens()
                     ));
                     state.replace_usage(provider, usage);
+                    ui.clear_usage_error(provider);
                     // Usage stats affect only the popup, but they share the
                     // reactive snapshot revision with quota updates.
                     ui.observe_limits_update();
                     publish_popup_ui(&set_ui, &ui);
+                }
+                Ok(WorkerEvent::ProviderUsageRefreshFailed(provider, error)) => {
+                    crate::logger::info(format!(
+                        "{} usage refresh failed: {error}",
+                        provider.display_name()
+                    ));
+                    ui.set_usage_error(provider, error);
+                    publish_popup_ui(&set_ui, &ui);
+                }
+                Ok(WorkerEvent::ProviderUsageDataCleared(provider, generation)) => {
+                    let completed = pending_usage_clear.as_mut().is_some_and(
+                        |(pending_generation, providers)| {
+                            if *pending_generation != generation {
+                                return false;
+                            }
+                            providers.retain(|pending_provider| *pending_provider != provider);
+                            providers.is_empty()
+                        },
+                    );
+                    if completed {
+                        for (_, commands) in state.worker_commands() {
+                            let _ = commands.send(WorkerCommand::ResumeUsageRefresh(generation));
+                        }
+                        pending_usage_clear = None;
+                    }
                 }
                 Ok(WorkerEvent::ProviderActivationStarted(provider)) => {
                     crate::logger::info(format!("{} activation started", provider.display_name()));
@@ -491,6 +576,8 @@ pub(super) fn start_background_bridge(
                     | WorkerEvent::RequestFinished(_)
                     | WorkerEvent::LimitsUpdated(_)
                     | WorkerEvent::UsageUpdated(_)
+                    | WorkerEvent::UsageDataCleared(_)
+                    | WorkerEvent::UsageRefreshFailed(_)
                     | WorkerEvent::ActivationStarted
                     | WorkerEvent::ActivationSucceeded
                     | WorkerEvent::ActivationFailed(_)
@@ -570,6 +657,7 @@ pub(super) fn pump_tray_and_dismiss(
             }
             TrayMenuAction::Settings => {
                 let settings_tx = settings_tx.clone();
+                let usage_actions_tx = state.usage_actions_tx.clone();
                 let updates = Arc::clone(&state.updates);
                 flush_popup_ui(set_ui, ui);
                 ui_dispatcher.dispatch(move || {
@@ -579,7 +667,11 @@ pub(super) fn pump_tray_and_dismiss(
                     if !popup::is_visible() && popup::prepare_show_on_ui_thread() {
                         popup::show_near_cursor();
                     }
-                    if let Err(error) = crate::settings_window::open(settings_tx, updates) {
+                    if let Err(error) = crate::settings_window::open(
+                        settings_tx,
+                        usage_actions_tx,
+                        updates,
+                    ) {
                         eprintln!("Could not open settings window: {error:?}");
                     }
                 });

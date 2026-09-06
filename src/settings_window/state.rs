@@ -272,6 +272,7 @@ pub(super) struct SettingsPageContext<'a> {
     pub(super) theme_navigation_guard: HookRef<bool>,
     pub(super) theme_navigation_guard_timer: HookRef<Option<DispatcherTimer>>,
     pub(super) settings_tx: Sender<Settings>,
+    pub(super) usage_actions_tx: Sender<UsageAction>,
     pub(super) ui_dispatcher: UiMarshaller,
     pub(super) updates: Arc<UpdateController>,
 }

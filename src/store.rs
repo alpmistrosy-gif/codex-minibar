@@ -27,7 +27,7 @@ use crate::usage::{
 const SCHEMA_VERSION: i64 = 1;
 const CODEX_CACHE_VERSION: u8 = 7;
 const CLAUDE_CACHE_VERSION: u8 = 4;
-const CURSOR_USAGE_VERSION: u8 = 5;
+const CURSOR_USAGE_VERSION: u8 = 8;
 const CACHE_RETENTION_DAYS: i64 = 365;
 
 static SHARED: OnceLock<Arc<Mutex<ProviderStore>>> = OnceLock::new();
@@ -326,6 +326,26 @@ impl ProviderStore {
             daily.push(row?);
         }
         Ok(statistics_from_daily(&daily, history_days))
+    }
+
+    /// Deletes all locally derived usage data while preserving provider
+    /// credentials, quota snapshots, and the cached pricing catalog.
+    pub fn clear_usage_data(&self) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for table in [
+            "usage_daily",
+            "usage_hourly",
+            "usage_model_daily",
+            "usage_file_daily",
+            "usage_file_model_daily",
+            "usage_events",
+            "scan_files",
+        ] {
+            tx.execute(&format!("DELETE FROM {table}"), [])?;
+        }
+        tx.execute("UPDATE provider_meta SET usage_fetched_at = NULL", [])?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Hourly usage in `[start, end]`, local hours. Claude prefers `usage_events`
@@ -1505,6 +1525,38 @@ mod tests {
         let stats = store.load_usage_daily(ProviderKind::Cursor, 30).unwrap();
         assert_eq!(stats.daily.len(), 1);
         assert_eq!(stats.history.requests, 1);
+    }
+
+    #[test]
+    fn clear_usage_data_removes_derived_rows_and_fetch_markers() {
+        let dir = tempdir().unwrap();
+        let store = test_store(&dir.path().join("test.sqlite"));
+        let today = Local::now().date_naive();
+        store
+            .replace_usage_daily(
+                ProviderKind::Cursor,
+                &[DailyTokenUsage {
+                    date: today,
+                    usage: TokenUsage {
+                        input_tokens: 10,
+                        requests: 1,
+                        ..Default::default()
+                    },
+                }],
+            )
+            .unwrap();
+        store
+            .set_usage_fetched_at(ProviderKind::Cursor, Utc::now())
+            .unwrap();
+
+        store.clear_usage_data().unwrap();
+
+        assert!(store
+            .load_usage_daily(ProviderKind::Cursor, 30)
+            .unwrap()
+            .daily
+            .is_empty());
+        assert!(store.usage_fetched_at(ProviderKind::Cursor).unwrap().is_none());
     }
 
     #[test]

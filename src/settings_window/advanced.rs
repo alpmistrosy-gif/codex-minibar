@@ -51,6 +51,7 @@ pub(super) fn render(ctx: &SettingsPageContext<'_>) -> (&'static str, Vec<Elemen
     let hovered_card_id = ctx.hovered_card_id;
     let set_hovered_card_id = ctx.set_hovered_card_id.clone();
     let settings_tx = ctx.settings_tx.clone();
+    let usage_actions_tx = ctx.usage_actions_tx.clone();
     let ui_dispatcher = ctx.ui_dispatcher.clone();
     let apply_settings_import = settings_tx.clone();
     let apply_settings_reset = settings_tx.clone();
@@ -141,6 +142,23 @@ pub(super) fn render(ctx: &SettingsPageContext<'_>) -> (&'static str, Vec<Elemen
                 set_hovered_card_id.clone(),
             )
             .with_key("advanced-import"),
+            settings_action_card(
+                "Clear Usage data",
+                "Clear",
+                move || {
+                    if let Err(error) = usage_actions_tx.send(UsageAction::ClearData) {
+                        eprintln!("failed to queue usage data clear: {error}");
+                        crate::notifications::show(
+                            "Usage data clear failed",
+                            "The background worker is unavailable.",
+                        );
+                    }
+                },
+                "advanced-clear-usage",
+                hovered_card_id,
+                set_hovered_card_id.clone(),
+            )
+            .with_key("advanced-clear-usage"),
             settings_action_card(
                 "Reset all settings",
                 "Reset",

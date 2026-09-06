@@ -58,12 +58,21 @@ pub trait Activator: Send + 'static {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkerCommand {
     Refresh,
+    ClearUsageData(u64),
+    ResumeUsageRefresh(u64),
     SetLimitRefreshInterval(Duration),
     SetAutomaticActivation(bool),
     SetScheduledActivations(Vec<ScheduledActivation>),
     SetAutoActivationPauses(Vec<AutoActivationPause>),
     SetHistoryRetentionDays(u16),
     Shutdown,
+}
+
+/// Commands originating from a settings surface and handled by the
+/// multi-provider coordinator rather than one provider worker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UsageAction {
+    ClearData,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +87,8 @@ pub enum WorkerEvent {
     RequestFinished(RequestKind),
     LimitsUpdated(RateLimits),
     UsageUpdated(UsageStatistics),
+    UsageDataCleared(u64),
+    UsageRefreshFailed(String),
     ActivationStarted,
     ActivationSucceeded,
     ActivationFailed(String),
@@ -88,6 +99,8 @@ pub enum WorkerEvent {
     ProviderRequestFinished(crate::settings::ProviderKind, RequestKind),
     ProviderLimitsUpdated(crate::settings::ProviderKind, RateLimits),
     ProviderUsageUpdated(crate::settings::ProviderKind, UsageStatistics),
+    ProviderUsageDataCleared(crate::settings::ProviderKind, u64),
+    ProviderUsageRefreshFailed(crate::settings::ProviderKind, String),
     ProviderActivationStarted(crate::settings::ProviderKind),
     ProviderActivationSucceeded(crate::settings::ProviderKind),
     ProviderActivationFailed(crate::settings::ProviderKind, String),
@@ -261,6 +274,12 @@ fn start_worker_with_channels(
                     let _ = limit_commands.send(WorkerCommand::Refresh);
                     let _ = usage_commands.send(WorkerCommand::Refresh);
                 }
+                WorkerCommand::ClearUsageData(generation) => {
+                    let _ = usage_commands.send(WorkerCommand::ClearUsageData(generation));
+                }
+                WorkerCommand::ResumeUsageRefresh(generation) => {
+                    let _ = usage_commands.send(WorkerCommand::ResumeUsageRefresh(generation));
+                }
                 WorkerCommand::SetLimitRefreshInterval(interval) => {
                     let _ = limit_commands.send(WorkerCommand::SetLimitRefreshInterval(interval));
                 }
@@ -393,6 +412,7 @@ fn run_limit_task(
             Ok(WorkerCommand::Refresh) | Err(RecvTimeoutError::Timeout) => {
                 next_poll = Instant::now();
             }
+            Ok(WorkerCommand::ClearUsageData(_)) | Ok(WorkerCommand::ResumeUsageRefresh(_)) => {}
             Ok(WorkerCommand::SetHistoryRetentionDays(_)) => {}
         }
     }
@@ -412,6 +432,7 @@ fn run_usage_task(
     if let Ok(usage) = provider.load_cached_usage_statistics(history_retention_days) {
         let _ = events.send(WorkerEvent::UsageUpdated(usage));
     }
+    let mut next_refresh = Instant::now();
     while !limits_ready.load(Ordering::Acquire) {
         match commands.recv_timeout(Duration::from_millis(100)) {
             Ok(WorkerCommand::Shutdown) | Err(RecvTimeoutError::Disconnected) => return,
@@ -430,6 +451,16 @@ fn run_usage_task(
             | Ok(WorkerCommand::SetAutomaticActivation(_))
             | Ok(WorkerCommand::SetScheduledActivations(_))
             | Ok(WorkerCommand::SetAutoActivationPauses(_)) => {}
+            Ok(WorkerCommand::ClearUsageData(generation)) => {
+                if let Err(error) = crate::store::with_store(|store| store.clear_usage_data()) {
+                    eprintln!("failed to clear usage data: {error:#}");
+                }
+                let _ = events.send(WorkerEvent::UsageUpdated(
+                    crate::usage::UsageStatistics::default(),
+                ));
+                let _ = events.send(WorkerEvent::UsageDataCleared(generation));
+            }
+            Ok(WorkerCommand::ResumeUsageRefresh(_)) => {}
             Err(RecvTimeoutError::Timeout) => {}
         }
     }
@@ -437,14 +468,19 @@ fn run_usage_task(
     // Preserve this deadline while processing commands that belong to the
     // limit task. Otherwise every settings update wakes this task and turns a
     // ten-minute maintenance scan into a tight loop.
-    let mut next_refresh = Instant::now();
+    let mut paused_after_clear = None::<u64>;
     loop {
-        if next_refresh <= Instant::now() {
+        if paused_after_clear.is_none() && next_refresh <= Instant::now() {
             let _ = events.send(WorkerEvent::RequestStarted(RequestKind::Usage));
             #[cfg(not(test))]
             let _ = crate::pricing::refresh_if_stale();
-            if let Ok(usage) = provider.refresh_usage_statistics(history_retention_days) {
-                let _ = events.send(WorkerEvent::UsageUpdated(usage));
+            match provider.refresh_usage_statistics(history_retention_days) {
+                Ok(usage) => {
+                    let _ = events.send(WorkerEvent::UsageUpdated(usage));
+                }
+                Err(error) => {
+                    let _ = events.send(WorkerEvent::UsageRefreshFailed(error.to_string()));
+                }
             }
             let _ = events.send(WorkerEvent::RequestFinished(RequestKind::Usage));
             next_refresh = Instant::now() + USAGE_STATS_INTERVAL;
@@ -465,7 +501,25 @@ fn run_usage_task(
                 }
             }
             Ok(WorkerCommand::Refresh) | Err(RecvTimeoutError::Timeout) => {
-                next_refresh = Instant::now();
+                if paused_after_clear.is_none() {
+                    next_refresh = Instant::now();
+                }
+            }
+            Ok(WorkerCommand::ClearUsageData(generation)) => {
+                if let Err(error) = crate::store::with_store(|store| store.clear_usage_data()) {
+                    eprintln!("failed to clear usage data: {error:#}");
+                }
+                let _ = events.send(WorkerEvent::UsageUpdated(
+                    crate::usage::UsageStatistics::default(),
+                ));
+                let _ = events.send(WorkerEvent::UsageDataCleared(generation));
+                paused_after_clear = Some(generation);
+            }
+            Ok(WorkerCommand::ResumeUsageRefresh(generation)) => {
+                if paused_after_clear == Some(generation) {
+                    paused_after_clear = None;
+                    next_refresh = Instant::now();
+                }
             }
             Ok(WorkerCommand::SetLimitRefreshInterval(_))
             | Ok(WorkerCommand::SetAutomaticActivation(_))

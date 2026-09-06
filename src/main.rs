@@ -64,6 +64,7 @@ fn run() -> Result<()> {
         .map(|(provider, worker)| (*provider, worker.commands.clone()))
         .collect();
     let (settings_tx, settings_rx) = mpsc::channel();
+    let (usage_actions_tx, usage_actions_rx) = mpsc::channel();
     let updates = UpdateController::new();
     if settings.check_for_updates {
         updates.check_async(true, settings.notifications.update_available);
@@ -86,6 +87,8 @@ fn run() -> Result<()> {
         last_activation_at,
         settings_tx,
         settings_rx: Mutex::new(Some(settings_rx)),
+        usage_actions_tx,
+        usage_actions_rx: Mutex::new(Some(usage_actions_rx)),
         updates: Arc::clone(&updates),
     });
     codex_minibar::updater::install_runtime(Arc::clone(&updates), {
