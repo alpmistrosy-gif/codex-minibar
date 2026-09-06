@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 
 use crate::{
     limits::{AdditionalLimit, LimitWindow, RateLimits},
+    pricing,
     settings::ProviderKind,
     store,
     usage::{DailyTokenUsage, TokenUsage, UsageStatistics, statistics_from_daily},
@@ -33,7 +34,7 @@ const CURSOR_CLIENT_ID: &str = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB";
 const ACCESS_TOKEN_KEY: &str = "cursorAuth/accessToken";
 const REFRESH_TOKEN_KEY: &str = "cursorAuth/refreshToken";
 const USAGE_EXPORT_PATH: &str = "/api/dashboard/export-usage-events-csv";
-const USAGE_CACHE_VERSION: u8 = 4;
+const USAGE_CACHE_VERSION: u8 = 5;
 const USAGE_CACHE_TTL: ChronoDuration = ChronoDuration::minutes(10);
 
 /// Detect the Cursor desktop application from its local installation or its
@@ -439,60 +440,14 @@ fn cursor_estimated_cost_microusd(
     cache_read: u64,
     output: u64,
 ) -> Option<u64> {
-    let raw_model = model.trim().to_ascii_lowercase();
-    let model = normalize_cursor_model_name(&raw_model);
-    let fast = raw_model.contains("-fast") || raw_model.contains("_fast");
-    // Rates verified against Cursor's Models & Pricing page on 2026-09-06.
-    // Cache-write '-' in Cursor's table means that the write column is free.
-    let (input_rate, cache_write_rate, cache_read_rate, output_rate) = match model.as_str() {
-        "grok-4.6" => {
-            if fast {
-                (4.0, 0.0, 1.0, 12.0)
-            } else {
-                (2.0, 0.0, 0.5, 6.0)
-            }
-        }
-        "grok-4.5" => {
-            if fast {
-                (4.0, 0.0, 1.0, 18.0)
-            } else {
-                (2.0, 0.0, 0.5, 6.0)
-            }
-        }
-        "composer-2.5" => {
-            if fast {
-                (3.0, 0.0, 0.5, 15.0)
-            } else {
-                (0.5, 0.0, 0.2, 2.5)
-            }
-        }
-        // Cursor documents this fixed-rate bucket as Legacy Enterprise Auto
-        // through 2026-09-07; its cache-write rate is explicitly $1.25/M.
-        "auto" => (1.25, 1.25, 0.25, 6.0),
-        "claude-opus-5" | "claude-opus-4-8" => (5.0, 6.25, 0.5, 25.0),
-        "claude-sonnet-5" => (2.0, 2.5, 0.2, 10.0),
-        "gpt-6-astra" => (10.0, 12.5, 1.0, 50.0),
-        "gpt-5.6-luna" => (0.2, 0.25, 0.02, 1.2),
-        "gpt-5.6-sol" | "gpt-5.6" => (4.0, 5.0, 0.4, 20.0),
-        "gpt-5.6-terra" => (2.0, 2.5, 0.2, 12.0),
-        "gemini-3.1-pro" => (2.0, 2.5, 0.2, 12.0),
-        "gemini-3.8-flash" => (0.75, 0.9375, 0.075, 3.5),
-        "gemini-2.5-pro" => (1.25, 1.5625, 0.3125, 10.0),
-        "gpt-5.4" => (2.5, 3.125, 0.25, 15.0),
-        "gpt-5.4-mini" => (0.75, 0.9375, 0.075, 4.5),
-        "gpt-5.3" | "gpt-5.2" => (1.75, 2.1875, 0.175, 14.0),
-        "gpt-5" => (1.25, 1.5625, 0.125, 10.0),
-        // Cursor's Grok Bot labels describe a cloud product, not a public API
-        // model. Cursor does not publish a token price for these buckets.
-        "grok-bot-automation" | "grok-bot-cua" | "grok-bot-default" => return None,
-        _ => return None,
-    };
-    let cost = (cache_write as f64 * cache_write_rate
-        + input as f64 * input_rate
-        + cache_read as f64 * cache_read_rate
-        + output as f64 * output_rate)
-        / 1_000_000.0;
-    Some((cost * 1_000_000.0).round().clamp(0.0, u64::MAX as f64) as u64)
+    pricing::request_cost_microusd(
+        ProviderKind::Cursor,
+        Some(model),
+        cache_write,
+        input,
+        cache_read,
+        output,
+    )
 }
 
 fn cursor_export_timestamp(value: &str) -> Option<(NaiveDate, Option<DateTime<Local>>)> {
@@ -836,17 +791,9 @@ mod tests {
     }
 
     #[test]
-    fn prices_current_cursor_models_and_leaves_grok_bot_unpriced() {
+    fn leaves_cursor_usage_unpriced_without_a_rate_catalog() {
         assert_eq!(
             cursor_estimated_cost_microusd("grok-4.6", 0, 100_000, 50_000, 10_000),
-            Some(285_000)
-        );
-        assert_eq!(
-            cursor_estimated_cost_microusd("composer-2.5-fast", 0, 100_000, 50_000, 10_000),
-            Some(475_000)
-        );
-        assert_eq!(
-            cursor_estimated_cost_microusd("grok-bot-automation", 0, 100_000, 50_000, 10_000),
             None
         );
     }

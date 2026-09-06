@@ -441,6 +441,8 @@ fn run_usage_task(
     loop {
         if next_refresh <= Instant::now() {
             let _ = events.send(WorkerEvent::RequestStarted(RequestKind::Usage));
+            #[cfg(not(test))]
+            let _ = crate::pricing::refresh_if_stale();
             if let Ok(usage) = provider.refresh_usage_statistics(history_retention_days) {
                 let _ = events.send(WorkerEvent::UsageUpdated(usage));
             }

@@ -25,9 +25,9 @@ use crate::usage::{
 };
 
 const SCHEMA_VERSION: i64 = 1;
-const CODEX_CACHE_VERSION: u8 = 6;
-const CLAUDE_CACHE_VERSION: u8 = 3;
-const CURSOR_USAGE_VERSION: u8 = 4;
+const CODEX_CACHE_VERSION: u8 = 7;
+const CLAUDE_CACHE_VERSION: u8 = 4;
+const CURSOR_USAGE_VERSION: u8 = 5;
 const CACHE_RETENTION_DAYS: i64 = 365;
 
 static SHARED: OnceLock<Arc<Mutex<ProviderStore>>> = OnceLock::new();
@@ -133,6 +133,11 @@ impl ProviderStore {
                 schema_version INTEGER NOT NULL DEFAULT 1,
                 flags_json TEXT NOT NULL DEFAULT '{}'
             );
+            CREATE TABLE IF NOT EXISTS pricing_catalog (
+                source TEXT PRIMARY KEY NOT NULL,
+                fetched_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
             ",
         )?;
         self.migrate_schema_updates()?;
@@ -230,6 +235,38 @@ impl ProviderStore {
             *limits.get_mut(provider) = snapshot;
         }
         Ok(limits)
+    }
+
+    pub(crate) fn load_pricing_catalog(
+        &self,
+        source: &str,
+    ) -> Result<Option<(String, String)>> {
+        self.conn
+            .query_row(
+                "SELECT fetched_at, payload_json FROM pricing_catalog WHERE source = ?1",
+                params![source],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .context("load cached pricing catalog")
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn save_pricing_catalog(
+        &self,
+        source: &str,
+        fetched_at: DateTime<Utc>,
+        payload: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO pricing_catalog(source, fetched_at, payload_json)
+             VALUES(?1, ?2, ?3)
+             ON CONFLICT(source) DO UPDATE SET
+                fetched_at=excluded.fetched_at,
+                payload_json=excluded.payload_json",
+            params![source, fetched_at.to_rfc3339(), payload],
+        )?;
+        Ok(())
     }
 
     pub fn load_limits(&self, provider: ProviderKind) -> Result<Option<RateLimits>> {
