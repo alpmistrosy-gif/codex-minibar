@@ -1706,7 +1706,14 @@ fn usage_breakdown_card(
     usage_card(
         vstack((
             grid((
-                body_strong("Breakdown").vertical_alignment(VerticalAlignment::Center),
+                body_strong("Breakdown")
+                    .vertical_alignment(VerticalAlignment::Top)
+                    .margin(Thickness {
+                        left: 0.0,
+                        top: 2.0,
+                        right: 0.0,
+                        bottom: 0.0,
+                    }),
                 segmented_control(
                     "usage-breakdown",
                     vec![
