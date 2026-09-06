@@ -1,0 +1,266 @@
+name: PAIWS Minibar x64 build v4 freshness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout upstream 0.4.4
+        uses: actions/checkout@v4
+        with:
+          repository: vertopolkaLF/codex-minibar
+          ref: 0.4.4
+          path: src
+
+      - name: Apply Claude remote source adaptation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/src/claude.rs")
+          text = path.read_text(encoding="utf-8")
+
+          old_install = '''/// Detect a local Claude Code installation without starting it. A signed-in
+          /// credentials directory is also a useful signal for portable/npm installs
+          /// whose launcher is no longer present on PATH in the current process, and the
+          /// desktop app counts too: it ships its own Claude Code and never writes a
+          /// credentials file.
+          pub fn is_installed(explicit: Option<&Path>) -> bool {
+              first_available(explicit).is_some() || credentials_path().is_some_and(|path| path.is_file())
+          }'''
+
+          new_install = '''fn remote_quota_command() -> Option<String> {
+              std::env::var("CODEX_MINIBAR_CLAUDE_REMOTE_CMD")
+                  .ok()
+                  .and_then(|value| {
+                      let value = value.trim();
+                      (!value.is_empty()).then(|| value.to_owned())
+                  })
+          }
+
+          /// Detect an available Claude quota source without starting Claude.
+          /// A configured remote quota command counts as an available source, so
+          /// Windows does not need a second Claude login merely for display.
+          pub fn is_installed(explicit: Option<&Path>) -> bool {
+              remote_quota_command().is_some()
+                  || first_available(explicit).is_some()
+                  || credentials_path().is_some_and(|path| path.is_file())
+          }'''
+
+          if old_install not in text:
+              raise SystemExit("0.4.4 is_installed anchor not found")
+          text = text.replace(old_install, new_install, 1)
+
+          old_read = '''    pub fn read_rate_limits(&mut self) -> Result<RateLimits> {
+                  let credentials = load_credentials()?;'''
+          new_read = '''    pub fn read_rate_limits(&mut self) -> Result<RateLimits> {
+                  if let Some(command) = remote_quota_command() {
+                      return read_remote_rate_limits(&command);
+                  }
+                  let credentials = load_credentials()?;'''
+
+          if old_read not in text:
+              raise SystemExit("0.4.4 read_rate_limits anchor not found")
+          text = text.replace(old_read, new_read, 1)
+
+          marker = '''impl Default for ClaudeClient {
+          '''
+          if marker not in text:
+              raise SystemExit("0.4.4 ClaudeClient Default marker not found")
+
+          helper = r'''fn read_remote_rate_limits(command: &str) -> Result<RateLimits> {
+              let output = if cfg!(windows) {
+                  Command::new("cmd.exe")
+                      .args(["/D", "/C"])
+                      .arg(command)
+                      .output()
+              } else {
+                  Command::new("sh").args(["-c", command]).output()
+              }
+              .context("launch Claude remote quota command")?;
+
+              if !output.status.success() {
+                  let stderr = String::from_utf8_lossy(&output.stderr);
+                  bail!(
+                      "Claude remote quota command failed with {}: {}",
+                      output.status,
+                      stderr.trim()
+                  );
+              }
+
+              let stdout =
+                  String::from_utf8(output.stdout).context("decode Claude remote quota command output")?;
+              let snapshot: Value =
+                  serde_json::from_str(stdout.trim()).context("parse Claude remote quota snapshot")?;
+
+              anyhow::ensure!(
+                  snapshot.get("provider").and_then(Value::as_str) == Some("claude"),
+                  "Claude remote quota snapshot has the wrong provider"
+              );
+
+              let freshness = snapshot
+                  .get("freshness")
+                  .and_then(Value::as_str)
+                  .unwrap_or("UNKNOWN");
+              if freshness != "FRESH" {
+                  let detail = snapshot
+                      .get("error")
+                      .and_then(Value::as_str)
+                      .unwrap_or("remote snapshot is not fresh");
+                  bail!("Claude remote quota snapshot is {freshness}: {detail}");
+              }
+
+              let usage = serde_json::json!({
+                  "five_hour": remote_window(snapshot.pointer("/windows/five_hour")),
+                  "seven_day": remote_window(snapshot.pointer("/windows/seven_day")),
+              });
+
+              let sampled_at = snapshot
+                  .get("as_of")
+                  .and_then(Value::as_str)
+                  .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                  .map(|value| value.with_timezone(&Utc))
+                  .unwrap_or_else(Utc::now);
+
+              let mut limits = parse_usage_response(&usage.to_string(), sampled_at)?;
+              limits.plan_type = snapshot
+                  .get("plan")
+                  .and_then(Value::as_str)
+                  .map(str::to_owned);
+              Ok(limits)
+          }
+
+          fn remote_window(window: Option<&Value>) -> Value {
+              let Some(window) = window else {
+                  return Value::Null;
+              };
+              if window.get("state").and_then(Value::as_str) != Some("FRESH") {
+                  return Value::Null;
+              }
+              let Some(used_percent) = window.get("used_percent").and_then(Value::as_f64) else {
+                  return Value::Null;
+              };
+              serde_json::json!({
+                  "utilization": used_percent,
+                  "resets_at": window.get("reset_at").cloned().unwrap_or(Value::Null),
+              })
+          }
+
+          '''
+
+          text = text.replace(marker, helper + marker, 1)
+          path.write_text(text, encoding="utf-8", newline="\n")
+          print("Claude remote source adaptation applied to exact upstream 0.4.4 source.")
+          PY
+
+      - name: Apply strict freshness invalidation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # AppState: preserve provider/card identity and metric shapes, but
+          # invalidate provider-fresh values after a failed quota poll.
+          state_path = Path("src/src/popup_window/state.rs")
+          state = state_path.read_text(encoding="utf-8")
+
+          state_anchor = "    pub(super) fn replace_usage("
+          insert_at = state.find(state_anchor)
+          if insert_at < 0:
+              raise SystemExit("0.4.4 replace_usage anchor not found")
+
+          helper = '''    /// Invalidate live quota fields after a provider poll failure.
+              /// Existing widgets remain configured, but stale percentages/reset times
+              /// disappear immediately instead of masquerading as current values.
+              pub(super) fn invalidate_limits(&self, provider: ProviderKind) {
+                  if let Ok(mut current) = self.limits.lock() {
+                      let limits = current.get_mut(provider);
+
+                      limits.primary.used_percent = None;
+                      limits.primary.resets_at = None;
+                      limits.secondary.used_percent = None;
+                      limits.secondary.resets_at = None;
+
+                      for additional in &mut limits.additional_limits {
+                          additional.window.used_percent = None;
+                          additional.window.resets_at = None;
+                      }
+
+                      limits.credits = Default::default();
+                      limits.reset_credits = None;
+                      limits.spending = None;
+                      limits.openrouter_accounts.clear();
+                      limits.primary_window_is_unactivated = false;
+                  }
+              }
+
+          '''
+          state = state[:insert_at] + helper + state[insert_at:]
+          state_path.write_text(state, encoding="utf-8", newline="\n")
+
+          # UI bridge: scope the edit specifically to ProviderPollFailed.
+          bridge_path = Path("src/src/popup_window/bridge.rs")
+          bridge = bridge_path.read_text(encoding="utf-8")
+
+          event_anchor = "Ok(WorkerEvent::ProviderPollFailed(provider, error)) => {"
+          event_at = bridge.find(event_anchor)
+          if event_at < 0:
+              raise SystemExit("0.4.4 ProviderPollFailed event anchor not found")
+
+          set_error = "ui.set_provider_error(provider, error);"
+          set_at = bridge.find(set_error, event_at)
+          if set_at < 0:
+              raise SystemExit("0.4.4 ProviderPollFailed set_provider_error anchor not found")
+
+          publish = "publish_popup_ui(&set_ui, &ui);"
+          publish_at = bridge.find(publish, set_at)
+          if publish_at < 0:
+              raise SystemExit("0.4.4 ProviderPollFailed publish anchor not found")
+
+          insert = '''
+                              state.invalidate_limits(provider);
+                              let limits = state.current_limits();
+                              if let Err(error) = tray.sync(
+                                  &widgets,
+                                  &limits,
+                                  update_available_from_phase(&update_phase),
+                              ) {
+                                  ui.set_popup_error(error.to_string());
+                              }
+                              ui.observe_limits_update();
+                              '''
+          bridge = bridge[:set_at + len(set_error)] + insert + bridge[publish_at:]
+          bridge_path.write_text(bridge, encoding="utf-8", newline="\n")
+
+          print("Strict provider poll failure invalidation applied.")
+          PY
+
+      - name: Install Rust 1.95
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Format patched source
+        working-directory: src
+        run: cargo fmt --all
+
+      - name: Build x64 portable
+        shell: pwsh
+        working-directory: src
+        run: .\build.ps1 -Arch x64 -SkipInstaller
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-minibar-paiws-0.4.4-x64-freshness
+          path: src/dist/0.4.4/*-portable.zip
+          if-no-files-found: error
