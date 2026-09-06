@@ -1,0 +1,100 @@
+diff --git a/src/claude.rs b/src/claude.rs
+--- a/src/claude.rs
++++ b/src/claude.rs
+@@ -197,6 +197,11 @@ impl ClaudeClient {
+     }
+
+     pub fn read_rate_limits(&mut self) -> Result<RateLimits> {
++        if let Ok(command) = std::env::var("CODEX_MINIBAR_CLAUDE_REMOTE_CMD") {
++            if !command.trim().is_empty() {
++                return read_remote_rate_limits(&command);
++            }
++        }
+         let credentials = load_credentials()?;
+         let sign_in_hint = credentials.source.sign_in_hint();
+         // `ureq` is built without its default Rustls backend. Configure the
+@@ -267,6 +272,84 @@ impl ClaudeClient {
+         Ok(limits)
+     }
+ }
++
++fn read_remote_rate_limits(command: &str) -> Result<RateLimits> {
++    let output = if cfg!(windows) {
++        Command::new("cmd.exe")
++            .args(["/D", "/C"])
++            .arg(command)
++            .output()
++    } else {
++        Command::new("sh").args(["-c", command]).output()
++    }
++    .context("launch Claude remote quota command")?;
++
++    if !output.status.success() {
++        let stderr = String::from_utf8_lossy(&output.stderr);
++        bail!(
++            "Claude remote quota command failed with {}: {}",
++            output.status,
++            stderr.trim()
++        );
++    }
++
++    let stdout =
++        String::from_utf8(output.stdout).context("decode Claude remote quota command output")?;
++    let snapshot: Value =
++        serde_json::from_str(stdout.trim()).context("parse Claude remote quota snapshot")?;
++
++    anyhow::ensure!(
++        snapshot.get("provider").and_then(Value::as_str) == Some("claude"),
++        "Claude remote quota snapshot has the wrong provider"
++    );
++
++    let freshness = snapshot
++        .get("freshness")
++        .and_then(Value::as_str)
++        .unwrap_or("UNKNOWN");
++    if freshness != "FRESH" {
++        let detail = snapshot
++            .get("error")
++            .and_then(Value::as_str)
++            .unwrap_or("remote snapshot is not fresh");
++        bail!("Claude remote quota snapshot is {freshness}: {detail}");
++    }
++
++    let usage = serde_json::json!({
++        "five_hour": remote_window(snapshot.pointer("/windows/five_hour")),
++        "seven_day": remote_window(snapshot.pointer("/windows/seven_day")),
++    });
++    let sampled_at = snapshot
++        .get("as_of")
++        .and_then(Value::as_str)
++        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
++        .map(|value| value.with_timezone(&Utc))
++        .unwrap_or_else(Utc::now);
++
++    let mut limits = parse_usage_response(&usage.to_string(), sampled_at)?;
++    limits.plan_type = snapshot
++        .get("plan")
++        .and_then(Value::as_str)
++        .map(str::to_owned);
++    Ok(limits)
++}
++
++fn remote_window(window: Option<&Value>) -> Value {
++    let Some(window) = window else {
++        return Value::Null;
++    };
++    if window.get("state").and_then(Value::as_str) != Some("FRESH") {
++        return Value::Null;
++    }
++    let Some(used_percent) = window.get("used_percent").and_then(Value::as_f64) else {
++        return Value::Null;
++    };
++    serde_json::json!({
++        "utilization": used_percent,
++        "resets_at": window.get("reset_at").cloned().unwrap_or(Value::Null),
++    })
++}
++
+ impl Default for ClaudeClient {
+     fn default() -> Self {
+         Self::new()
