@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      RUST_TEST_THREADS: "1"
+      RUST_TEST_THREADS: "4"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
