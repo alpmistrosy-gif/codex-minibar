@@ -6,9 +6,9 @@
 use crate::settings::{
     AccentColor, AppTheme, AutoActivationPause, BottomBarSize, LimitRefreshInterval, LimitValue,
     OpenRouterAccount, PopupBackgroundMaterial, PopupCornerRadius, PopupVisibility,
-    PopupWidgetKind, ProviderKind,
-    ScheduledActivation, Settings, TimeFormat, TotalSpendPresentation, TrayColorMode,
-    TrayFixedColor, TrayIndicator, TrayPresentation, TrayWidget, TrayWidgetKind,
+    PopupWidgetKind, ProviderKind, ScheduledActivation, Settings, TimeFormat,
+    TotalSpendPresentation, TrayColorMode, TrayFixedColor, TrayIndicator, TrayPresentation,
+    TrayWidget, TrayWidgetKind,
 };
 use crate::settings_controls::{
     SETTINGS_CARD_PADDING, settings_action_card, settings_brick_body_height, settings_brick_row,
@@ -293,8 +293,7 @@ pub fn render(
     let (accent_color, set_accent_color) = cx.use_state(settings.accent_color);
     let (animations_enabled, set_animations_enabled) = cx.use_state(settings.animations_enabled);
     let (bottom_bar_size, set_bottom_bar_size) = cx.use_state(settings.bottom_bar_size);
-    let (popup_corner_radius, set_popup_corner_radius) =
-        cx.use_state(settings.popup_corner_radius);
+    let (popup_corner_radius, set_popup_corner_radius) = cx.use_state(settings.popup_corner_radius);
     let (popup_background_material, set_popup_background_material) =
         cx.use_state(settings.popup_background_material);
     let (time_format, set_time_format) = cx.use_state(settings.time_format);

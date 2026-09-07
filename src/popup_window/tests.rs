@@ -121,7 +121,10 @@ fn combined_spend_uses_usage_tab_windows() {
     );
     assert_eq!(
         crate::usage_overview::dates_for_total_spend(TotalSpendPeriod::Yesterday),
-        (today - ChronoDuration::days(1), today - ChronoDuration::days(1))
+        (
+            today - ChronoDuration::days(1),
+            today - ChronoDuration::days(1)
+        )
     );
     assert_eq!(
         crate::usage_overview::dates_for_total_spend(TotalSpendPeriod::ThirtyDays),

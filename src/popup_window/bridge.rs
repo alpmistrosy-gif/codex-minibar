@@ -266,8 +266,8 @@ pub(super) fn start_background_bridge(
                 return;
             };
             while let Ok(settings) = settings_rx.try_recv() {
-                let update_checks_enabled = settings.check_for_updates
-                    && !crate::remote_status::enabled();
+                let update_checks_enabled =
+                    settings.check_for_updates && !crate::remote_status::enabled();
                 if update_checks_enabled && !*check_for_updates {
                     updates.check_async(false, settings.notifications.update_available);
                 }
@@ -277,45 +277,48 @@ pub(super) fn start_background_bridge(
             }
         };
 
-        let drain_usage_actions = |ui: &mut UiState,
-                                   set_ui: &AsyncSetState<UiState>,
-                                   generation: &mut u64,
-                                   pending: &mut Option<(u64, Vec<ProviderKind>)>| {
-            let Some(actions) = usage_actions_rx.as_ref() else {
-                return;
-            };
-            while let Ok(UsageAction::ClearData) = actions.try_recv() {
-                // One clear operation is enough. The button remains safe to
-                // click while a previous provider barrier is draining.
-                if pending.is_some() {
-                    continue;
-                }
-                *generation = generation.wrapping_add(1);
-                let clear_generation = *generation;
-                let targets = state
-                    .worker_commands()
-                    .into_iter()
-                    .filter_map(|(provider, commands)| {
-                        commands
-                            .send(WorkerCommand::ClearUsageData(clear_generation))
-                            .is_ok()
-                            .then_some(provider)
-                    })
-                    .collect::<Vec<_>>();
-                state.clear_usage_snapshot();
-                ui.observe_limits_update();
-                publish_popup_ui(set_ui, ui);
-
-                if targets.is_empty() {
-                    if let Err(error) = crate::store::with_store(|store| store.clear_usage_data()) {
-                        ui.set_popup_error(format!("Could not clear usage data: {error:#}"));
-                        publish_popup_ui(set_ui, ui);
+        let drain_usage_actions =
+            |ui: &mut UiState,
+             set_ui: &AsyncSetState<UiState>,
+             generation: &mut u64,
+             pending: &mut Option<(u64, Vec<ProviderKind>)>| {
+                let Some(actions) = usage_actions_rx.as_ref() else {
+                    return;
+                };
+                while let Ok(UsageAction::ClearData) = actions.try_recv() {
+                    // One clear operation is enough. The button remains safe to
+                    // click while a previous provider barrier is draining.
+                    if pending.is_some() {
+                        continue;
                     }
-                } else {
-                    *pending = Some((clear_generation, targets));
+                    *generation = generation.wrapping_add(1);
+                    let clear_generation = *generation;
+                    let targets = state
+                        .worker_commands()
+                        .into_iter()
+                        .filter_map(|(provider, commands)| {
+                            commands
+                                .send(WorkerCommand::ClearUsageData(clear_generation))
+                                .is_ok()
+                                .then_some(provider)
+                        })
+                        .collect::<Vec<_>>();
+                    state.clear_usage_snapshot();
+                    ui.observe_limits_update();
+                    publish_popup_ui(set_ui, ui);
+
+                    if targets.is_empty() {
+                        if let Err(error) =
+                            crate::store::with_store(|store| store.clear_usage_data())
+                        {
+                            ui.set_popup_error(format!("Could not clear usage data: {error:#}"));
+                            publish_popup_ui(set_ui, ui);
+                        }
+                    } else {
+                        *pending = Some((clear_generation, targets));
+                    }
                 }
-            }
-        };
+            };
 
         let drain_updates = |ui: &mut UiState,
                              set_ui: &AsyncSetState<UiState>,
@@ -682,11 +685,9 @@ pub(super) fn pump_tray_and_dismiss(
                     if !popup::is_visible() && popup::prepare_show_on_ui_thread() {
                         popup::show_near_cursor();
                     }
-                    if let Err(error) = crate::settings_window::open(
-                        settings_tx,
-                        usage_actions_tx,
-                        updates,
-                    ) {
+                    if let Err(error) =
+                        crate::settings_window::open(settings_tx, usage_actions_tx, updates)
+                    {
                         eprintln!("Could not open settings window: {error:?}");
                     }
                 });

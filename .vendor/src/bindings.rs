@@ -16251,11 +16251,7 @@ impl IUIElement {
             let set: Set = core::mem::transmute(
                 windows_core::Interface::vtable(self).SetTranslationTransition,
             );
-            set(
-                windows_core::Interface::as_raw(self),
-                value.param().abi(),
-            )
-            .ok()
+            set(windows_core::Interface::as_raw(self), value.param().abi()).ok()
         }
     }
     pub(crate) fn KeyboardAccelerators(
@@ -16305,7 +16301,11 @@ impl IUIElement {
                 &mut result__,
             )
             .map(|| result__)?;
-            Ok(windows_core::EventRevoker::new(self.clone(), token__, remove))
+            Ok(windows_core::EventRevoker::new(
+                self.clone(),
+                token__,
+                remove,
+            ))
         }
     }
     pub(crate) fn SetKeyboardAcceleratorPlacementMode(
@@ -17098,10 +17098,7 @@ impl IVisual {
             .map(|| result__)
         }
     }
-    pub(crate) fn SetOffset(
-        &self,
-        value: windows_numerics::Vector3,
-    ) -> windows_core::Result<()> {
+    pub(crate) fn SetOffset(&self, value: windows_numerics::Vector3) -> windows_core::Result<()> {
         unsafe {
             type Set = unsafe extern "system" fn(
                 *mut core::ffi::c_void,

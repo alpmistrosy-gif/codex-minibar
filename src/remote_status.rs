@@ -42,8 +42,8 @@ pub fn read_provider(provider: ProviderKind) -> Result<RateLimits> {
 
 fn fetch_status() -> Result<Value> {
     let address = SocketAddr::new(IpAddr::V4(HOST), PORT);
-    let mut stream =
-        TcpStream::connect_timeout(&address, CONNECT_TIMEOUT).context("connect Home Linux AI usage")?;
+    let mut stream = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT)
+        .context("connect Home Linux AI usage")?;
     stream
         .set_read_timeout(Some(IO_TIMEOUT))
         .context("set AI usage read timeout")?;
@@ -100,7 +100,9 @@ fn parse_provider_at(
 
     let generated = parse_time(root.get("generated_at").and_then(Value::as_str))?;
     let expires = parse_time(root.get("expires_at").and_then(Value::as_str))?;
-    let ttl = root.get("ttl_seconds").and_then(Value::as_i64)
+    let ttl = root
+        .get("ttl_seconds")
+        .and_then(Value::as_i64)
         .filter(|ttl| *ttl > 0 && *ttl <= 600)
         .context("invalid snapshot TTL")?;
     if generated > now || now >= expires || expires > generated + chrono::Duration::seconds(ttl) {
@@ -229,13 +231,11 @@ fn parse_credits(value: Option<&Value>) -> Credits {
             .get("unlimited")
             .and_then(Value::as_bool)
             .unwrap_or(false),
-        balance: value
-            .get("balance")
-            .and_then(|v| match v {
-                Value::String(s) => Some(s.clone()),
-                Value::Number(n) => Some(n.to_string()),
-                _ => None,
-            }),
+        balance: value.get("balance").and_then(|v| match v {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }),
     }
 }
 

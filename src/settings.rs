@@ -515,7 +515,9 @@ impl LimitRefreshInterval {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     #[default]
@@ -920,10 +922,7 @@ impl PopupVisibility {
         let mut bricks = BTreeMap::new();
         for provider in ProviderKind::ALL {
             for brick_id in crate::provider_registry::catalog_brick_ids(provider) {
-                bricks.insert(
-                    brick_id.clone(),
-                    Self::default_brick_visibility(&brick_id),
-                );
+                bricks.insert(brick_id.clone(), Self::default_brick_visibility(&brick_id));
             }
         }
         Self {
@@ -971,10 +970,7 @@ impl PopupVisibility {
         }
     }
 
-    pub fn absorb_discovered_bricks(
-        &mut self,
-        limits: &crate::limits::ProviderLimits,
-    ) -> bool {
+    pub fn absorb_discovered_bricks(&mut self, limits: &crate::limits::ProviderLimits) -> bool {
         let mut changed = false;
         for (provider, snapshot) in limits.iter() {
             for (brick_id, _) in
@@ -997,20 +993,11 @@ impl PopupVisibility {
         let prefix = format!("{}.", crate::provider_registry::descriptor(provider).id);
         crate::provider_registry::catalog_brick_ids(provider)
             .iter()
-            .chain(
-                self.bricks
-                    .keys()
-                    .filter(|id| id.starts_with(&prefix)),
-            )
+            .chain(self.bricks.keys().filter(|id| id.starts_with(&prefix)))
             .any(|brick_id| self.visibility_for(brick_id).all_tab)
     }
 
-    pub fn set_brick(
-        &mut self,
-        brick_id: impl Into<String>,
-        all_tab: bool,
-        provider_tab: bool,
-    ) {
+    pub fn set_brick(&mut self, brick_id: impl Into<String>, all_tab: bool, provider_tab: bool) {
         self.bricks.insert(
             brick_id.into(),
             PopupSurfaceVisibility {
@@ -1026,10 +1013,8 @@ impl PopupVisibility {
         for provider in ProviderKind::ALL {
             for brick_id in crate::provider_registry::catalog_brick_ids(provider) {
                 if !self.bricks.contains_key(&brick_id) {
-                    self.bricks.insert(
-                        brick_id.clone(),
-                        Self::default_brick_visibility(&brick_id),
-                    );
+                    self.bricks
+                        .insert(brick_id.clone(), Self::default_brick_visibility(&brick_id));
                     changed = true;
                 }
             }
@@ -1056,8 +1041,10 @@ impl PopupVisibility {
             self.bricks.remove(&id);
             changed = true;
         }
-        let known_providers: std::collections::HashSet<&str> =
-            ProviderKind::ALL.iter().map(|provider| provider.id()).collect();
+        let known_providers: std::collections::HashSet<&str> = ProviderKind::ALL
+            .iter()
+            .map(|provider| provider.id())
+            .collect();
         let stale_providers: Vec<String> = self
             .provider_all_tab
             .keys()
@@ -1646,7 +1633,12 @@ impl Settings {
         let tray_widgets_normalized = settings.normalize_tray_widgets();
         let popup_order_normalized = settings.normalize_popup_order();
         let popup_visibility_normalized = settings.normalize_popup_visibility();
-        if dirty || repaired || tray_widgets_normalized || popup_order_normalized || popup_visibility_normalized {
+        if dirty
+            || repaired
+            || tray_widgets_normalized
+            || popup_order_normalized
+            || popup_visibility_normalized
+        {
             settings.save(path)?;
         }
         Ok(settings)
@@ -1675,9 +1667,7 @@ impl Settings {
                 let stripped_time_format = document
                     .as_table_mut()
                     .is_some_and(|root| root.remove("time_format").is_some());
-                if stripped_time_format
-                    && let Ok(settings) = document.clone().try_into::<Self>()
-                {
+                if stripped_time_format && let Ok(settings) = document.clone().try_into::<Self>() {
                     eprintln!(
                         "settings time_format was invalid ({error}); using the Windows clock"
                     );
@@ -2799,17 +2789,21 @@ mod tests {
         assert!(!value.show_used_percentage);
         assert!(value.show_usage_pace);
         assert!(!value.compact_usage_cards);
-        assert!(value.popup_visibility.is_visible(
-            "codex.usage",
-            PopupSurface::ProviderTab,
-            true
-        ));
-        assert!(!value.popup_visibility.is_visible(
-            "codex.usage",
-            PopupSurface::HomeTab,
-            true
-        ));
-        assert!(value.popup_visibility.provider_shown_on_all(ProviderKind::Codex));
+        assert!(
+            value
+                .popup_visibility
+                .is_visible("codex.usage", PopupSurface::ProviderTab, true)
+        );
+        assert!(
+            !value
+                .popup_visibility
+                .is_visible("codex.usage", PopupSurface::HomeTab, true)
+        );
+        assert!(
+            value
+                .popup_visibility
+                .provider_shown_on_all(ProviderKind::Codex)
+        );
         assert!(value.show_total_spend_on_all_tab);
         assert_eq!(
             value.total_spend_presentation,
@@ -2861,7 +2855,10 @@ mod tests {
         assert_eq!(PopupCornerRadius::from_dip(4), PopupCornerRadius::Four);
         assert_eq!(PopupCornerRadius::from_dip(12), PopupCornerRadius::Medium);
         assert_eq!(PopupCornerRadius::from_dip(16), PopupCornerRadius::Large);
-        assert_eq!(PopupCornerRadius::from_dip(20), PopupCornerRadius::ExtraLarge);
+        assert_eq!(
+            PopupCornerRadius::from_dip(20),
+            PopupCornerRadius::ExtraLarge
+        );
         assert_eq!(PopupCornerRadius::Small.dip(), 8);
         assert_eq!(PopupCornerRadius::ExtraLarge.dip(), 20);
     }
@@ -2925,11 +2922,11 @@ show_usage_stats = false
 
         let loaded = Settings::load_or_create(&path).unwrap();
         assert_eq!(loaded.version, SETTINGS_VERSION);
-        assert!(!loaded.popup_visibility.is_visible(
-            "codex.resets",
-            PopupSurface::HomeTab,
-            true
-        ));
+        assert!(
+            !loaded
+                .popup_visibility
+                .is_visible("codex.resets", PopupSurface::HomeTab, true)
+        );
         assert!(!loaded.popup_visibility.is_visible(
             "codex.usage",
             PopupSurface::ProviderTab,
@@ -2976,11 +2973,11 @@ show_usage_stats = false
             },
         )]);
         assert!(settings.absorb_discovered_popup_bricks(&limits));
-        assert!(settings.popup_visibility.is_visible(
-            &brick_id,
-            PopupSurface::HomeTab,
-            true
-        ));
+        assert!(
+            settings
+                .popup_visibility
+                .is_visible(&brick_id, PopupSurface::HomeTab, true)
+        );
         assert!(!settings.absorb_discovered_popup_bricks(&limits));
     }
 
@@ -3047,9 +3044,11 @@ show_usage_stats = false
 
         assert_eq!(loaded.version, SETTINGS_VERSION);
         assert!(loaded.auto_activation_pauses.is_empty());
-        assert!(fs::read_to_string(path)
-            .unwrap()
-            .contains("auto_activation_pauses = []"));
+        assert!(
+            fs::read_to_string(path)
+                .unwrap()
+                .contains("auto_activation_pauses = []")
+        );
     }
 
     #[test]
@@ -3074,11 +3073,11 @@ tray_widgets = []
         assert!(migrated.start_at_login);
         assert!(migrated.show_usage_pace);
         assert!(!migrated.compact_usage_cards);
-        assert!(migrated.popup_visibility.is_visible(
-            "codex.resets",
-            PopupSurface::HomeTab,
-            true
-        ));
+        assert!(
+            migrated
+                .popup_visibility
+                .is_visible("codex.resets", PopupSurface::HomeTab, true)
+        );
         assert!(migrated.popup_visibility.is_visible(
             "codex.usage",
             PopupSurface::ProviderTab,

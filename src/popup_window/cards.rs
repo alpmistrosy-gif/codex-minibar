@@ -17,11 +17,7 @@ pub(super) fn provider_cards(
     provider_error: Option<(&str, Callback<()>)>,
 ) -> Vec<Element> {
     let (monthly_label, primary_label, secondary_label) = match provider {
-        ProviderKind::Cursor => (
-            "Cursor Models",
-            "Cursor Models",
-            "Cursor Models",
-        ),
+        ProviderKind::Cursor => ("Cursor Models", "Cursor Models", "Cursor Models"),
         ProviderKind::OpenRouter => ("Spending", "Spending", "Spending"),
         _ => ("Monthly", "5h Session", "Weekly"),
     };
@@ -1454,11 +1450,9 @@ pub(super) fn usage_statistics_card(provider: ProviderKind, limits: &RateLimits)
         return border(
             vstack((
                 body_strong("Usage activity"),
-                caption(
-                    "Waiting for Cursor's usage export. Refresh to retry.",
-                )
-                .foreground(ThemeRef::TertiaryText)
-                .wrap(),
+                caption("Waiting for Cursor's usage export. Refresh to retry.")
+                    .foreground(ThemeRef::TertiaryText)
+                    .wrap(),
             ))
             .spacing(6.0),
         )

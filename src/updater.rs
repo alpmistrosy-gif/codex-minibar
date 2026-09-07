@@ -88,10 +88,9 @@ pub fn open_release_notes() -> Result<()> {
 /// Shows a one-shot success toast after an in-place update relaunch.
 pub fn show_post_update_success_if_needed() {
     match take_post_update_success_marker() {
-        Ok(Some(version)) => notifications::show(
-            "Update complete",
-            &format!("Now running {version}."),
-        ),
+        Ok(Some(version)) => {
+            notifications::show("Update complete", &format!("Now running {version}."))
+        }
         Ok(None) => {}
         Err(error) => eprintln!("failed to read post-update marker: {error:#}"),
     }
