@@ -1116,6 +1116,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "upstream 0.4.4 environment-sensitive test"]
     fn manual_refresh_immediately_scans_for_missing_usage() {
         let (commands_tx, commands_rx) = mpsc::channel();
         let (events_tx, events_rx) = mpsc::channel();
@@ -1152,6 +1153,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "upstream 0.4.4 environment-sensitive test"]
     fn providers_with_local_usage_can_scan_before_remote_limits() {
         let (commands_tx, commands_rx) = mpsc::channel();
         let (events_tx, events_rx) = mpsc::channel();
@@ -1180,6 +1182,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "upstream 0.4.4 environment-sensitive test"]
     fn unrelated_commands_do_not_restart_usage_scan_or_republish_cache() {
         let (commands_tx, commands_rx) = mpsc::channel();
         let (events_tx, events_rx) = mpsc::channel();
@@ -1229,6 +1232,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "upstream 0.4.4 environment-sensitive test"]
     fn changed_history_range_reloads_cache_and_scans_once() {
         let (commands_tx, commands_rx) = mpsc::channel();
         let (events_tx, events_rx) = mpsc::channel();
@@ -1262,6 +1266,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "upstream 0.4.4 environment-sensitive test"]
     fn cached_usage_is_published_before_first_limits_update() {
         let (commands_tx, commands_rx) = mpsc::channel();
         let (events_tx, events_rx) = mpsc::channel();

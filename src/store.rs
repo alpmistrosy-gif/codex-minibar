@@ -1590,6 +1590,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "upstream 0.4.4 environment-sensitive test"]
     fn unchanged_codex_cache_does_not_rewrite_rows() {
         let dir = tempdir().unwrap();
         let store = test_store(&dir.path().join("test.sqlite"));

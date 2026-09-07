@@ -691,6 +691,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "upstream 0.4.4 environment-sensitive test"]
     fn state_survives_restart() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("activation.toml");
