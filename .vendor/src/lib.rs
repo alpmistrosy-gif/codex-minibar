@@ -8,6 +8,7 @@
     clippy::upper_case_acronyms,
     clippy::missing_transmute_annotations
 )]
+#[rustfmt::skip]
 mod bindings;
 
 mod app;
