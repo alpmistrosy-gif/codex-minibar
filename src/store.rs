@@ -1465,7 +1465,11 @@ mod tests {
             },
             ..RateLimits::default()
         };
-        for provider in [ProviderKind::Codex, ProviderKind::Claude, ProviderKind::Cursor] {
+        for provider in [
+            ProviderKind::Codex,
+            ProviderKind::Claude,
+            ProviderKind::Cursor,
+        ] {
             store.save_limits(provider, &saved).unwrap();
         }
         let restored = store.hydrate_provider_limits(30).unwrap();
