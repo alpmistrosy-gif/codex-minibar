@@ -86,31 +86,25 @@ impl AppState {
         }
     }
 
-    /// Clear provider-fresh values after a failed poll.
+    /// Clear only the two remote providers after a failed poll.
     pub(super) fn invalidate_limits(&self, provider: ProviderKind) {
         if !crate::remote_status::handles_provider(provider) {
             return;
         }
         if let Ok(mut current) = self.limits.lock() {
-            let limits = current.get_mut(provider);
-            limits.primary.used_percent = None;
-            limits.primary.resets_at = None;
-            limits.secondary.used_percent = None;
-            limits.secondary.resets_at = None;
-            for additional in &mut limits.additional_limits {
-                additional.window.used_percent = None;
-                additional.window.resets_at = None;
-            }
-            limits.credits = Default::default();
-            limits.reset_credits = None;
-            limits.spending = None;
-            limits.openrouter_accounts.clear();
-            limits.primary_window_is_unactivated = false;
-            if crate::remote_status::handles_provider(provider) {
-                limits.account_name = Some("Home Linux · UNKNOWN".to_owned());
-                limits.limit_name = None;
+            *current.get_mut(provider) = crate::remote_status::unknown_limits();
+        }
+    }
+
+    pub(super) fn expire_remote_limits(&self) -> bool {
+        let mut changed = false;
+        if let Ok(mut current) = self.limits.lock() {
+            let now = Utc::now();
+            for provider in [ProviderKind::Codex, ProviderKind::Claude] {
+                changed |= crate::remote_status::expire_limits(current.get_mut(provider), now);
             }
         }
+        changed
     }
 
     pub(super) fn replace_usage(

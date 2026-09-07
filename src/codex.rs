@@ -329,6 +329,7 @@ pub fn parse_rate_limits(
     Ok(RateLimits {
         primary,
         secondary: parse_window(limits.get("secondary")),
+        remote_expires_at: None,
         sampled_at,
         primary_window_is_unactivated,
         account_name: None,

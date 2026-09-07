@@ -17,7 +17,8 @@ updater = (root / 'src/updater.rs').read_text(encoding='utf-8')
 assert 'in-place upstream updates are disabled' in updater
 assert 'if crate::remote_status::enabled()' in updater.split('pub fn check_async', 1)[1].split('thread::spawn', 1)[0]
 state = (root / 'src/popup_window/state.rs').read_text(encoding='utf-8')
-assert 'Home Linux · UNKNOWN' in state
-assert 'limits.primary.used_percent = None' in state
-assert 'limits.secondary.used_percent = None' in state
+assert 'remote_status::unknown_limits()' in state
+assert 'expire_remote_limits' in state
+assert 'Home Linux · UNKNOWN' in reader
+assert 'remote_expires_at' in reader
 print('PASS: HTTP-only reader, freshness, activation, hydration and pinned-update guardrails')

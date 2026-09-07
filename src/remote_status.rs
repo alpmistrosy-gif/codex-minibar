@@ -20,8 +20,14 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const IO_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 
+#[cfg(not(test))]
 pub fn enabled() -> bool {
     true
+}
+
+#[cfg(test)]
+pub fn enabled() -> bool {
+    false
 }
 
 pub fn handles_provider(provider: ProviderKind) -> bool {
@@ -38,6 +44,21 @@ pub fn read_provider(provider: ProviderKind) -> Result<RateLimits> {
     }
     let payload = fetch_status()?;
     parse_provider(&payload, provider)
+}
+
+pub fn unknown_limits() -> RateLimits {
+    RateLimits {
+        account_name: Some("Home Linux · UNKNOWN".to_owned()),
+        ..RateLimits::default()
+    }
+}
+
+pub fn expire_limits(limits: &mut RateLimits, now: DateTime<Utc>) -> bool {
+    if limits.remote_expires_at.is_some_and(|expiry| now >= expiry) {
+        *limits = unknown_limits();
+        return true;
+    }
+    false
 }
 
 fn fetch_status() -> Result<Value> {
@@ -159,6 +180,7 @@ fn parse_provider_at(
         primary,
         secondary,
         sampled_at,
+        remote_expires_at: Some(expires.min(sampled_at + chrono::Duration::seconds(ttl))),
         plan_type: value.get("plan").and_then(Value::as_str).map(str::to_owned),
         account_name: Some(remote_status_caption(provider, source, trust)),
         limit_name: Some(source.to_owned()),
@@ -253,6 +275,27 @@ mod tests {
 
     fn parse_provider(root: &Value, provider: ProviderKind) -> Result<RateLimits> {
         parse_provider_at(root, provider, parse_time(Some("2026-09-06T15:12:00Z"))?)
+    }
+
+    #[test]
+    fn expiry_clears_both_windows_at_deadline() {
+        let now = parse_time(Some("2026-09-06T15:12:00Z")).unwrap();
+        let mut limits = RateLimits {
+            primary: LimitWindow {
+                used_percent: Some(42),
+                ..LimitWindow::default()
+            },
+            secondary: LimitWindow {
+                used_percent: Some(63),
+                ..LimitWindow::default()
+            },
+            remote_expires_at: Some(now),
+            ..RateLimits::default()
+        };
+        assert!(!expire_limits(&mut limits, now - chrono::Duration::seconds(1)));
+        assert!(expire_limits(&mut limits, now));
+        assert_eq!(limits, unknown_limits());
+        assert!(!expire_limits(&mut limits, now));
     }
 
     #[test]

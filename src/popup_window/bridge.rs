@@ -392,6 +392,17 @@ pub(super) fn start_background_bridge(
         };
 
         loop {
+            if state.expire_remote_limits() {
+                if let Err(error) = tray.sync(
+                    &widgets,
+                    &state.current_limits(),
+                    update_available_from_phase(&update_phase),
+                ) {
+                    ui.set_popup_error(error.to_string());
+                }
+                ui.observe_limits_update();
+                publish_popup_ui(&set_ui, &ui);
+            }
             popup::pump_messages();
             drain_toast_update();
             drain_usage_actions(

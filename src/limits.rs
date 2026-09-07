@@ -194,6 +194,9 @@ pub struct RateLimits {
     pub primary: LimitWindow,
     pub secondary: LimitWindow,
     pub sampled_at: DateTime<Utc>,
+    /// Remote display deadline; never restored from persisted snapshots.
+    #[serde(skip)]
+    pub remote_expires_at: Option<DateTime<Utc>>,
     /// Provider-derived marker for a possible Codex synthetic 5h response.
     /// The scheduler confirms it across neighboring reset timestamps; other
     /// providers leave this false.
