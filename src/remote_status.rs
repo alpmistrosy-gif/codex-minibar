@@ -292,7 +292,10 @@ mod tests {
             remote_expires_at: Some(now),
             ..RateLimits::default()
         };
-        assert!(!expire_limits(&mut limits, now - chrono::Duration::seconds(1)));
+        assert!(!expire_limits(
+            &mut limits,
+            now - chrono::Duration::seconds(1)
+        ));
         assert!(expire_limits(&mut limits, now));
         assert_eq!(limits, unknown_limits());
         assert!(!expire_limits(&mut limits, now));
