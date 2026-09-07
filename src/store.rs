@@ -1470,9 +1470,15 @@ mod tests {
         }
         let restored = store.hydrate_provider_limits(30).unwrap();
         for provider in [ProviderKind::Codex, ProviderKind::Claude] {
-            assert_eq!(restored.get(provider), &crate::remote_status::unknown_limits());
+            assert_eq!(
+                restored.get(provider),
+                &crate::remote_status::unknown_limits()
+            );
         }
-        assert_eq!(restored.get(ProviderKind::Cursor).primary.used_percent, Some(42));
+        assert_eq!(
+            restored.get(ProviderKind::Cursor).primary.used_percent,
+            Some(42)
+        );
     }
 
     fn sample_codex_cache() -> UsageCache {
