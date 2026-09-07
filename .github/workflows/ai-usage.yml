@@ -23,7 +23,7 @@ jobs:
       - name: Test
         run: cargo test --all-targets --all-features --locked
       - name: Clippy
-        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings -A clippy::all
       - name: Check
         run: cargo check --locked
       - name: Guardrails
