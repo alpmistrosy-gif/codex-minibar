@@ -1,0 +1,47 @@
+name: AI Usage
+on:
+  push:
+    branches: [ai-usage]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      RUST_TEST_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Test
+        run: cargo test --all-targets --all-features --locked
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Check
+        run: cargo check --locked
+      - name: Guardrails
+        run: python ai-usage/guardrails.py
+      - name: Portable x64
+        run: ./build.ps1 -Arch x64 -SkipInstaller
+      - name: Package hash
+        shell: pwsh
+        run: |
+          $zip = @(Get-ChildItem dist -Recurse -Filter '*x64-portable.zip')
+          if ($zip.Count -ne 1) { throw 'Expected exactly one x64 portable ZIP' }
+          New-Item -ItemType Directory -Force delivery | Out-Null
+          Copy-Item $zip[0].FullName delivery/AI-Usage-x64-portable.zip
+          $hash = (Get-FileHash delivery/AI-Usage-x64-portable.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  AI-Usage-x64-portable.zip" | Set-Content delivery/SHA256SUMS.txt
+          Write-Output "SHA256: $hash"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Usage-x64-portable
+          path: delivery/*
+          if-no-files-found: error
