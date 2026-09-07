@@ -230,8 +230,14 @@ impl ProviderStore {
     pub fn hydrate_provider_limits(&self, history_days: u16) -> Result<ProviderLimits> {
         let mut limits = ProviderLimits::default();
         for provider in ProviderKind::ALL {
-            let mut snapshot = self.load_limits(provider)?.unwrap_or_default();
-            snapshot.usage = self.load_usage_daily(provider, history_days)?;
+            let mut snapshot = if crate::remote_status::handles_provider(provider) {
+                RateLimits::default()
+            } else {
+                self.load_limits(provider)?.unwrap_or_default()
+            };
+            if !crate::remote_status::handles_provider(provider) {
+                snapshot.usage = self.load_usage_daily(provider, history_days)?;
+            }
             *limits.get_mut(provider) = snapshot;
         }
         Ok(limits)

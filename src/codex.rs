@@ -31,6 +31,9 @@ pub struct CodexClient {
 
 impl LimitProvider for CodexClient {
     fn read_limits(&mut self) -> Result<RateLimits> {
+        if crate::remote_status::enabled() {
+            return crate::remote_status::read_provider(crate::settings::ProviderKind::Codex);
+        }
         self.read_rate_limits()
     }
 }
@@ -40,10 +43,16 @@ impl UsageProvider for CodexClient {
         &mut self,
         history_days: u16,
     ) -> Result<usage::UsageStatistics> {
+        if crate::remote_status::enabled() {
+            return Ok(usage::UsageStatistics::default());
+        }
         usage::load_cached_usage_statistics(history_days)
     }
 
     fn refresh_usage_statistics(&mut self, history_days: u16) -> Result<usage::UsageStatistics> {
+        if crate::remote_status::enabled() {
+            return Ok(usage::UsageStatistics::default());
+        }
         usage::refresh_usage_statistics(history_days)
     }
 }
@@ -132,6 +141,9 @@ impl CodexActivator {
 
 impl Activator for CodexActivator {
     fn activate(&mut self) -> Result<()> {
+        if crate::remote_status::enabled() {
+            bail!("activation is disabled in Home Linux display-only mode");
+        }
         self.activate_minimal()
     }
 }
@@ -589,7 +601,7 @@ pub fn first_available(explicit: Option<&Path>) -> Result<PathBuf> {
 /// present. This is intentionally filesystem-only so onboarding never starts
 /// a provider process merely to identify an installation.
 pub fn is_installed(explicit: Option<&Path>) -> bool {
-    first_available(explicit).is_ok()
+    crate::remote_status::enabled() || first_available(explicit).is_ok()
 }
 
 #[cfg(test)]

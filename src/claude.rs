@@ -35,7 +35,9 @@ pub const ACTIVATION_PROMPT: &str = "reply with letter a";
 /// desktop app counts too: it ships its own Claude Code and never writes a
 /// credentials file.
 pub fn is_installed(explicit: Option<&Path>) -> bool {
-    first_available(explicit).is_some() || credentials_path().is_some_and(|path| path.is_file())
+    crate::remote_status::enabled()
+        || first_available(explicit).is_some()
+        || credentials_path().is_some_and(|path| path.is_file())
 }
 
 /// Resolves a Claude Code launcher without spawning it. An explicit folder is
@@ -117,6 +119,9 @@ impl Default for ClaudeActivator {
 
 impl Activator for ClaudeActivator {
     fn activate(&mut self) -> Result<()> {
+        if crate::remote_status::enabled() {
+            bail!("activation is disabled in Home Linux display-only mode");
+        }
         self.activate_minimal()
     }
 }
@@ -293,6 +298,9 @@ impl Default for ClaudeClient {
 
 impl LimitProvider for ClaudeClient {
     fn read_limits(&mut self) -> Result<RateLimits> {
+        if crate::remote_status::enabled() {
+            return crate::remote_status::read_provider(crate::settings::ProviderKind::Claude);
+        }
         self.read_rate_limits()
     }
 }
@@ -316,10 +324,16 @@ impl UsageProvider for ClaudeClient {
         &mut self,
         history_days: u16,
     ) -> Result<usage::UsageStatistics> {
+        if crate::remote_status::enabled() {
+            return Ok(usage::UsageStatistics::default());
+        }
         usage::load_cached_claude_usage_statistics(history_days)
     }
 
     fn refresh_usage_statistics(&mut self, history_days: u16) -> Result<usage::UsageStatistics> {
+        if crate::remote_status::enabled() {
+            return Ok(usage::UsageStatistics::default());
+        }
         usage::refresh_claude_usage_statistics(history_days)
     }
 }

@@ -53,11 +53,23 @@ pub fn start_provider_worker(
 ) -> Result<WorkerHandle> {
     let activation_path = provider_activation_path(provider, activation_path);
     let automatic_activation = settings.automatic_activation
-        && crate::provider_registry::descriptor(provider).supports_activation;
+        && crate::provider_registry::descriptor(provider).supports_activation
+        && !crate::remote_status::handles_provider(provider);
     let mut worker = match provider {
         ProviderKind::Codex => {
-            let executable = first_available(settings.codex_path.as_deref())?;
-            crate::logger::info(format!("Codex executable: {}", executable.display()));
+            let executable = if crate::remote_status::handles_provider(provider) {
+                PathBuf::from("codex")
+            } else {
+                first_available(settings.codex_path.as_deref())?
+            };
+            crate::logger::info(format!(
+                "Codex source: {}",
+                if crate::remote_status::handles_provider(provider) {
+                    crate::remote_status::endpoint_label().to_owned()
+                } else {
+                    format!("local executable {}", executable.display())
+                }
+            ));
             worker::start_worker(
                 CodexClient::new(&executable),
                 CodexClient::new(&executable),
@@ -71,9 +83,20 @@ pub fn start_provider_worker(
             )
         }
         ProviderKind::Claude => {
-            let executable = crate::claude::first_available(settings.claude_path.as_deref())
-                .unwrap_or_else(|| PathBuf::from("claude"));
-            crate::logger::info(format!("Claude executable: {}", executable.display()));
+            let executable = if crate::remote_status::handles_provider(provider) {
+                PathBuf::from("claude")
+            } else {
+                crate::claude::first_available(settings.claude_path.as_deref())
+                    .unwrap_or_else(|| PathBuf::from("claude"))
+            };
+            crate::logger::info(format!(
+                "Claude source: {}",
+                if crate::remote_status::handles_provider(provider) {
+                    crate::remote_status::endpoint_label().to_owned()
+                } else {
+                    format!("local executable {}", executable.display())
+                }
+            ));
             worker::start_worker(
                 ClaudeClient::new(),
                 ClaudeClient::new(),
@@ -181,7 +204,9 @@ fn schedules_for(
     provider: ProviderKind,
     settings: &Settings,
 ) -> Vec<crate::settings::ScheduledActivation> {
-    if !crate::provider_registry::descriptor(provider).supports_activation {
+    if crate::remote_status::handles_provider(provider)
+        || !crate::provider_registry::descriptor(provider).supports_activation
+    {
         return Vec::new();
     }
     settings
@@ -196,7 +221,9 @@ fn auto_activation_pauses_for(
     provider: ProviderKind,
     settings: &Settings,
 ) -> Vec<crate::settings::AutoActivationPause> {
-    if !crate::provider_registry::descriptor(provider).supports_activation {
+    if crate::remote_status::handles_provider(provider)
+        || !crate::provider_registry::descriptor(provider).supports_activation
+    {
         return Vec::new();
     }
     settings

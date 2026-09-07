@@ -18,6 +18,7 @@ pub mod pricing;
 pub mod usage_overview;
 pub mod provider;
 pub mod provider_registry;
+pub mod remote_status;
 pub mod scheduler;
 pub mod secrets;
 pub mod settings;

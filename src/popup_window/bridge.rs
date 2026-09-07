@@ -209,13 +209,15 @@ pub(super) fn start_background_bridge(
             for (provider, commands) in state.worker_commands() {
                 let _ = commands.send(WorkerCommand::SetAutomaticActivation(
                     settings.automatic_activation
-                        && crate::provider_registry::descriptor(provider).supports_activation,
+                        && crate::provider_registry::descriptor(provider).supports_activation
+                        && !crate::remote_status::handles_provider(provider),
                 ));
                 let schedules = settings
                     .scheduled_activations
                     .iter()
                     .filter(|rule| {
-                        crate::provider_registry::descriptor(provider).supports_activation
+                        !crate::remote_status::handles_provider(provider)
+                            && crate::provider_registry::descriptor(provider).supports_activation
                             && rule.provider() == Some(provider)
                     })
                     .cloned()
@@ -225,7 +227,8 @@ pub(super) fn start_background_bridge(
                     .auto_activation_pauses
                     .iter()
                     .filter(|pause| {
-                        crate::provider_registry::descriptor(provider).supports_activation
+                        !crate::remote_status::handles_provider(provider)
+                            && crate::provider_registry::descriptor(provider).supports_activation
                             && pause.provider() == Some(provider)
                     })
                     .cloned()
@@ -263,10 +266,12 @@ pub(super) fn start_background_bridge(
                 return;
             };
             while let Ok(settings) = settings_rx.try_recv() {
-                if settings.check_for_updates && !*check_for_updates {
+                let update_checks_enabled = settings.check_for_updates
+                    && !crate::remote_status::enabled();
+                if update_checks_enabled && !*check_for_updates {
                     updates.check_async(false, settings.notifications.update_available);
                 }
-                *check_for_updates = settings.check_for_updates;
+                *check_for_updates = update_checks_enabled;
                 *notify_on_update = settings.notifications.update_available;
                 apply_settings(ui, set_ui, notification_settings, widgets, tray, settings);
             }
@@ -568,6 +573,16 @@ pub(super) fn start_background_bridge(
                         provider.display_name()
                     ));
                     ui.set_provider_error(provider, error);
+                    state.invalidate_limits(provider);
+                    let limits = state.current_limits();
+                    if let Err(error) = tray.sync(
+                        &widgets,
+                        &limits,
+                        update_available_from_phase(&update_phase),
+                    ) {
+                        ui.set_popup_error(error.to_string());
+                    }
+                    ui.observe_limits_update();
                     publish_popup_ui(&set_ui, &ui);
                 }
                 // All live provider workers are forwarded as scoped events.

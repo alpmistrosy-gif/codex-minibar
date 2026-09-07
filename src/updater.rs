@@ -65,6 +65,9 @@ pub fn install_runtime(
 /// Single entry point for installing a discovered update. All UI surfaces must
 /// call this and only this when the user chooses to update now.
 pub fn apply_pending_update() -> Result<()> {
+    if crate::remote_status::enabled() {
+        bail!("in-place upstream updates are disabled in Home Linux display-only mode");
+    }
     let runtime = RUNTIME.get().context("update runtime is not installed")?;
     runtime.updates.apply()?;
     (runtime.before_exit)();
@@ -230,6 +233,9 @@ impl UpdateController {
     }
 
     pub fn check_async(self: &Arc<Self>, notify: bool, notify_enabled: bool) {
+        if crate::remote_status::enabled() {
+            return;
+        }
         let controller = Arc::clone(self);
         thread::spawn(move || {
             if let Err(error) = controller.check_once(notify, notify_enabled) {

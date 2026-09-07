@@ -26,7 +26,7 @@ pub(super) fn provider_cards(
         _ => ("Monthly", "5h Session", "Weekly"),
     };
     let mut trailing: Vec<Element> = Vec::new();
-    if show_account_name {
+    if show_account_name || crate::remote_status::handles_provider(provider) {
         if let Some(name) = limits.account_name.as_ref() {
             trailing.push(
                 caption(name.clone())

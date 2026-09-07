@@ -86,6 +86,33 @@ impl AppState {
         }
     }
 
+    /// Clear provider-fresh values after a failed poll.
+    pub(super) fn invalidate_limits(&self, provider: ProviderKind) {
+        if !crate::remote_status::handles_provider(provider) {
+            return;
+        }
+        if let Ok(mut current) = self.limits.lock() {
+            let limits = current.get_mut(provider);
+            limits.primary.used_percent = None;
+            limits.primary.resets_at = None;
+            limits.secondary.used_percent = None;
+            limits.secondary.resets_at = None;
+            for additional in &mut limits.additional_limits {
+                additional.window.used_percent = None;
+                additional.window.resets_at = None;
+            }
+            limits.credits = Default::default();
+            limits.reset_credits = None;
+            limits.spending = None;
+            limits.openrouter_accounts.clear();
+            limits.primary_window_is_unactivated = false;
+            if crate::remote_status::handles_provider(provider) {
+                limits.account_name = Some("Home Linux · UNKNOWN".to_owned());
+                limits.limit_name = None;
+            }
+        }
+    }
+
     pub(super) fn replace_usage(
         &self,
         provider: ProviderKind,
