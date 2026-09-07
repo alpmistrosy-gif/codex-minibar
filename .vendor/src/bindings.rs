@@ -4874,7 +4874,1149 @@ impl windows_core::RuntimeType for IBlock {
 }
 #[repr(C)]
 pub struct IBlock_Vtbl {
-    pub…129348 tokens truncated…ion.Point;f4;f4)");
+    pub base__: windows_core::IInspectable_Vtbl,
+}
+windows_core::imp::define_interface!(
+    IBorder,
+    IBorder_Vtbl,
+    0x1ca13b47_ff5c_5abc_a411_a177df9482a9
+);
+impl windows_core::RuntimeType for IBorder {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl IBorder {
+    pub(crate) fn SetBorderBrush<P0>(&self, value: P0) -> windows_core::Result<()>
+    where
+        P0: windows_core::Param<Brush>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetBorderBrush)(
+                windows_core::Interface::as_raw(self),
+                value.param().abi(),
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetBorderThickness(&self, value: Thickness) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetBorderThickness)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetBackground<P0>(&self, value: P0) -> windows_core::Result<()>
+    where
+        P0: windows_core::Param<Brush>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetBackground)(
+                windows_core::Interface::as_raw(self),
+                value.param().abi(),
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetCornerRadius(&self, value: CornerRadius) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetCornerRadius)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetPadding(&self, value: Thickness) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetPadding)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetChild<P0>(&self, value: P0) -> windows_core::Result<()>
+    where
+        P0: windows_core::Param<UIElement>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetChild)(
+                windows_core::Interface::as_raw(self),
+                value.param().abi(),
+            )
+            .ok()
+        }
+    }
+}
+#[repr(C)]
+pub struct IBorder_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    BorderBrush: usize,
+    pub SetBorderBrush: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    BorderThickness: usize,
+    pub SetBorderThickness:
+        unsafe extern "system" fn(*mut core::ffi::c_void, Thickness) -> windows_core::HRESULT,
+    Background: usize,
+    pub SetBackground: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    BackgroundSizing: usize,
+    SetBackgroundSizing: usize,
+    CornerRadius: usize,
+    pub SetCornerRadius:
+        unsafe extern "system" fn(*mut core::ffi::c_void, CornerRadius) -> windows_core::HRESULT,
+    Padding: usize,
+    pub SetPadding:
+        unsafe extern "system" fn(*mut core::ffi::c_void, Thickness) -> windows_core::HRESULT,
+    Child: usize,
+    pub SetChild: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    IBreadcrumbBar,
+    IBreadcrumbBar_Vtbl,
+    0x2e47b7d6_5fbd_54c7_b0b1_ceff4a19c744
+);
+impl windows_core::RuntimeType for IBreadcrumbBar {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl IBreadcrumbBar {
+    pub(crate) fn SetItemsSource<P0>(&self, value: P0) -> windows_core::Result<()>
+    where
+        P0: windows_core::Param<windows_core::IInspectable>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetItemsSource)(
+                windows_core::Interface::as_raw(self),
+                value.param().abi(),
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn ItemClicked<F>(
+        &self,
+        handler: F,
+    ) -> windows_core::Result<windows_core::EventRevoker>
+    where
+        F: Fn(
+                windows_core::Ref<BreadcrumbBar>,
+                windows_core::Ref<BreadcrumbBarItemClickedEventArgs>,
+            ) + 'static,
+    {
+        let handler: TypedEventHandler<BreadcrumbBar, BreadcrumbBarItemClickedEventArgs> = {
+            let com = windows_core::imp::DelegateBox::< TypedEventHandler < BreadcrumbBar , BreadcrumbBarItemClickedEventArgs > , F >::new (& TypedEventHandlerBox::< BreadcrumbBar , BreadcrumbBarItemClickedEventArgs , F >::VTABLE , handler) ;
+            unsafe { core::mem::transmute(windows_core::imp::box_new(com)) }
+        };
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            let token__ = (windows_core::Interface::vtable(self).ItemClicked)(
+                windows_core::Interface::as_raw(self),
+                windows_core::Interface::as_raw(&handler),
+                &mut result__,
+            )
+            .map(|| result__)?;
+            Ok(windows_core::EventRevoker::new(
+                self.clone(),
+                token__,
+                windows_core::Interface::vtable(self).RemoveItemClicked,
+            ))
+        }
+    }
+}
+#[repr(C)]
+pub struct IBreadcrumbBar_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    ItemsSource: usize,
+    pub SetItemsSource: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    ItemTemplate: usize,
+    SetItemTemplate: usize,
+    pub ItemClicked: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut i64,
+    ) -> windows_core::HRESULT,
+    pub RemoveItemClicked:
+        unsafe extern "system" fn(*mut core::ffi::c_void, i64) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    IBreadcrumbBarFactory,
+    IBreadcrumbBarFactory_Vtbl,
+    0xd5b6a6d9_3148_5cbc_a6ae_0f44cde41952
+);
+impl windows_core::RuntimeType for IBreadcrumbBarFactory {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+#[repr(C)]
+pub struct IBreadcrumbBarFactory_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    pub CreateInstance: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    IBreadcrumbBarItemClickedEventArgs,
+    IBreadcrumbBarItemClickedEventArgs_Vtbl,
+    0x1ceea503_365e_580d_bcd4_e9ad0248f6b5
+);
+impl windows_core::RuntimeType for IBreadcrumbBarItemClickedEventArgs {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl IBreadcrumbBarItemClickedEventArgs {
+    pub(crate) fn Index(&self) -> windows_core::Result<i32> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).Index)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+}
+#[repr(C)]
+pub struct IBreadcrumbBarItemClickedEventArgs_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    pub Index: unsafe extern "system" fn(*mut core::ffi::c_void, *mut i32) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(IBrush, IBrush_Vtbl, 0x2de3cb83_1329_5679_88f8_c822bc5442cb);
+impl windows_core::RuntimeType for IBrush {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+#[repr(C)]
+pub struct IBrush_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+}
+windows_core::imp::define_interface!(
+    IButton,
+    IButton_Vtbl,
+    0x216c183d_d07a_5aa5_b8a4_0300a2683e87
+);
+impl windows_core::RuntimeType for IButton {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl IButton {
+    pub(crate) fn Flyout(&self) -> windows_core::Result<FlyoutBase> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).Flyout)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        }
+    }
+    pub(crate) fn SetFlyout<P0>(&self, value: P0) -> windows_core::Result<()>
+    where
+        P0: windows_core::Param<FlyoutBase>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetFlyout)(
+                windows_core::Interface::as_raw(self),
+                value.param().abi(),
+            )
+            .ok()
+        }
+    }
+}
+#[repr(C)]
+pub struct IButton_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    pub Flyout: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetFlyout: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    IButtonBase,
+    IButtonBase_Vtbl,
+    0x65714269_2473_5327_a652_0ea6bce7f403
+);
+impl windows_core::RuntimeType for IButtonBase {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl IButtonBase {
+    pub(crate) fn Click<F>(&self, handler: F) -> windows_core::Result<windows_core::EventRevoker>
+    where
+        F: Fn(windows_core::Ref<windows_core::IInspectable>, windows_core::Ref<RoutedEventArgs>)
+            + 'static,
+    {
+        let handler: RoutedEventHandler = {
+            let com = windows_core::imp::DelegateBox::<RoutedEventHandler, F>::new(
+                &RoutedEventHandlerBox::<F>::VTABLE,
+                handler,
+            );
+            unsafe { core::mem::transmute(windows_core::imp::box_new(com)) }
+        };
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            let token__ = (windows_core::Interface::vtable(self).Click)(
+                windows_core::Interface::as_raw(self),
+                windows_core::Interface::as_raw(&handler),
+                &mut result__,
+            )
+            .map(|| result__)?;
+            Ok(windows_core::EventRevoker::new(
+                self.clone(),
+                token__,
+                windows_core::Interface::vtable(self).RemoveClick,
+            ))
+        }
+    }
+}
+#[repr(C)]
+pub struct IButtonBase_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    ClickMode: usize,
+    SetClickMode: usize,
+    IsPointerOver: usize,
+    IsPressed: usize,
+    Command: usize,
+    SetCommand: usize,
+    CommandParameter: usize,
+    SetCommandParameter: usize,
+    pub Click: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut i64,
+    ) -> windows_core::HRESULT,
+    pub RemoveClick:
+        unsafe extern "system" fn(*mut core::ffi::c_void, i64) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    IButtonFactory,
+    IButtonFactory_Vtbl,
+    0xfe393422_d91c_57b1_9a9c_2c7e3f41f77c
+);
+impl windows_core::RuntimeType for IButtonFactory {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+#[repr(C)]
+pub struct IButtonFactory_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    pub CreateInstance: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    ICalendarDatePicker,
+    ICalendarDatePicker_Vtbl,
+    0xe3d9faa1_0fd0_5932_a6db_ff00c003ac21
+);
+impl windows_core::RuntimeType for ICalendarDatePicker {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl ICalendarDatePicker {
+    pub(crate) fn SetIsCalendarOpen(&self, value: bool) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetIsCalendarOpen)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetPlaceholderText(&self, value: &str) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetPlaceholderText)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(&windows_core::HSTRING::from(value)),
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetHeader<P0>(&self, value: P0) -> windows_core::Result<()>
+    where
+        P0: windows_core::Param<windows_core::IInspectable>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetHeader)(
+                windows_core::Interface::as_raw(self),
+                value.param().abi(),
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetIsTodayHighlighted(&self, value: bool) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetIsTodayHighlighted)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn DateChanged<F>(
+        &self,
+        handler: F,
+    ) -> windows_core::Result<windows_core::EventRevoker>
+    where
+        F: Fn(
+                windows_core::Ref<CalendarDatePicker>,
+                windows_core::Ref<CalendarDatePickerDateChangedEventArgs>,
+            ) + 'static,
+    {
+        let handler: TypedEventHandler<CalendarDatePicker, CalendarDatePickerDateChangedEventArgs> = {
+            let com = windows_core::imp::DelegateBox::<
+                TypedEventHandler<CalendarDatePicker, CalendarDatePickerDateChangedEventArgs>,
+                F,
+            >::new(
+                &TypedEventHandlerBox::<
+                    CalendarDatePicker,
+                    CalendarDatePickerDateChangedEventArgs,
+                    F,
+                >::VTABLE,
+                handler,
+            );
+            unsafe { core::mem::transmute(windows_core::imp::box_new(com)) }
+        };
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            let token__ = (windows_core::Interface::vtable(self).DateChanged)(
+                windows_core::Interface::as_raw(self),
+                windows_core::Interface::as_raw(&handler),
+                &mut result__,
+            )
+            .map(|| result__)?;
+            Ok(windows_core::EventRevoker::new(
+                self.clone(),
+                token__,
+                windows_core::Interface::vtable(self).RemoveDateChanged,
+            ))
+        }
+    }
+}
+#[repr(C)]
+pub struct ICalendarDatePicker_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    Date: usize,
+    SetDate: usize,
+    IsCalendarOpen: usize,
+    pub SetIsCalendarOpen:
+        unsafe extern "system" fn(*mut core::ffi::c_void, bool) -> windows_core::HRESULT,
+    DateFormat: usize,
+    SetDateFormat: usize,
+    PlaceholderText: usize,
+    pub SetPlaceholderText: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    Header: usize,
+    pub SetHeader: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    HeaderTemplate: usize,
+    SetHeaderTemplate: usize,
+    CalendarViewStyle: usize,
+    SetCalendarViewStyle: usize,
+    LightDismissOverlayMode: usize,
+    SetLightDismissOverlayMode: usize,
+    Description: usize,
+    SetDescription: usize,
+    MinDate: usize,
+    SetMinDate: usize,
+    MaxDate: usize,
+    SetMaxDate: usize,
+    IsTodayHighlighted: usize,
+    pub SetIsTodayHighlighted:
+        unsafe extern "system" fn(*mut core::ffi::c_void, bool) -> windows_core::HRESULT,
+    DisplayMode: usize,
+    SetDisplayMode: usize,
+    FirstDayOfWeek: usize,
+    SetFirstDayOfWeek: usize,
+    DayOfWeekFormat: usize,
+    SetDayOfWeekFormat: usize,
+    CalendarIdentifier: usize,
+    SetCalendarIdentifier: usize,
+    IsOutOfScopeEnabled: usize,
+    SetIsOutOfScopeEnabled: usize,
+    IsGroupLabelVisible: usize,
+    SetIsGroupLabelVisible: usize,
+    CalendarViewDayItemChanging: usize,
+    RemoveCalendarViewDayItemChanging: usize,
+    pub DateChanged: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut i64,
+    ) -> windows_core::HRESULT,
+    pub RemoveDateChanged:
+        unsafe extern "system" fn(*mut core::ffi::c_void, i64) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    ICalendarDatePickerDateChangedEventArgs,
+    ICalendarDatePickerDateChangedEventArgs_Vtbl,
+    0x57c212d7_c2f2_54a0_9d41_f263b1e5106e
+);
+impl windows_core::RuntimeType for ICalendarDatePickerDateChangedEventArgs {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl ICalendarDatePickerDateChangedEventArgs {
+    pub(crate) fn NewDate(&self) -> windows_core::Result<windows_time::DateTime> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).NewDate)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+            .and_then(|r__: windows_reference::IReference<windows_time::DateTime>| r__.Value())
+        }
+    }
+}
+#[repr(C)]
+pub struct ICalendarDatePickerDateChangedEventArgs_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    pub NewDate: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    ICalendarDatePickerFactory,
+    ICalendarDatePickerFactory_Vtbl,
+    0xb00c7818_955a_5524_b451_93868230892f
+);
+impl windows_core::RuntimeType for ICalendarDatePickerFactory {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+#[repr(C)]
+pub struct ICalendarDatePickerFactory_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    pub CreateInstance: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    ICalendarView,
+    ICalendarView_Vtbl,
+    0xe786081e_b680_56ab_bfbb_52d5b17c365e
+);
+impl windows_core::RuntimeType for ICalendarView {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl ICalendarView {
+    pub(crate) fn SetIsGroupLabelVisible(&self, value: bool) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetIsGroupLabelVisible)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetIsTodayHighlighted(&self, value: bool) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetIsTodayHighlighted)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SelectedDatesChanged<F>(
+        &self,
+        handler: F,
+    ) -> windows_core::Result<windows_core::EventRevoker>
+    where
+        F: Fn(
+                windows_core::Ref<CalendarView>,
+                windows_core::Ref<Calenda…119348 tokens truncated…se,
+    ContentControl,
+    Control,
+    FrameworkElement,
+    UIElement,
+    DependencyObject
+);
+impl NavigationViewItemHeader {
+    pub(crate) fn new() -> windows_core::Result<Self> {
+        Self::INavigationViewItemHeaderFactory(|this| unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(this).CreateInstance)(
+                windows_core::Interface::as_raw(this),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        })
+    }
+    fn INavigationViewItemHeaderFactory<
+        R,
+        F: FnOnce(&INavigationViewItemHeaderFactory) -> windows_core::Result<R>,
+    >(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<
+            NavigationViewItemHeader,
+            INavigationViewItemHeaderFactory,
+        > = windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for NavigationViewItemHeader {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, INavigationViewItemHeader>();
+}
+unsafe impl windows_core::Interface for NavigationViewItemHeader {
+    type Vtable = <INavigationViewItemHeader as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <INavigationViewItemHeader as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for NavigationViewItemHeader {
+    type Target = INavigationViewItemHeader;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for NavigationViewItemHeader {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.NavigationViewItemHeader";
+}
+unsafe impl Send for NavigationViewItemHeader {}
+unsafe impl Sync for NavigationViewItemHeader {}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NavigationViewPaneDisplayMode(pub i32);
+impl NavigationViewPaneDisplayMode {
+    pub const Auto: Self = Self(0);
+    pub const Left: Self = Self(1);
+    pub const Top: Self = Self(2);
+    pub const LeftCompact: Self = Self(3);
+    pub const LeftMinimal: Self = Self(4);
+}
+impl windows_core::TypeKind for NavigationViewPaneDisplayMode {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for NavigationViewPaneDisplayMode {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Microsoft.UI.Xaml.Controls.NavigationViewPaneDisplayMode;i4)",
+    );
+}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NavigationViewSelectionChangedEventArgs(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    NavigationViewSelectionChangedEventArgs,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+impl windows_core::RuntimeType for NavigationViewSelectionChangedEventArgs {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::for_class::<
+        Self,
+        INavigationViewSelectionChangedEventArgs,
+    >();
+}
+unsafe impl windows_core::Interface for NavigationViewSelectionChangedEventArgs {
+    type Vtable = <INavigationViewSelectionChangedEventArgs as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID =
+        <INavigationViewSelectionChangedEventArgs as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for NavigationViewSelectionChangedEventArgs {
+    type Target = INavigationViewSelectionChangedEventArgs;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for NavigationViewSelectionChangedEventArgs {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.NavigationViewSelectionChangedEventArgs";
+}
+unsafe impl Send for NavigationViewSelectionChangedEventArgs {}
+unsafe impl Sync for NavigationViewSelectionChangedEventArgs {}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NumberBox(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    NumberBox,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+windows_core::imp::required_hierarchy!(
+    NumberBox,
+    Control,
+    FrameworkElement,
+    UIElement,
+    DependencyObject
+);
+impl NumberBox {
+    pub(crate) fn new() -> windows_core::Result<Self> {
+        Self::INumberBoxFactory(|this| unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(this).CreateInstance)(
+                windows_core::Interface::as_raw(this),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        })
+    }
+    fn INumberBoxFactory<R, F: FnOnce(&INumberBoxFactory) -> windows_core::Result<R>>(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<NumberBox, INumberBoxFactory> =
+            windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for NumberBox {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, INumberBox>();
+}
+unsafe impl windows_core::Interface for NumberBox {
+    type Vtable = <INumberBox as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <INumberBox as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for NumberBox {
+    type Target = INumberBox;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for NumberBox {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.NumberBox";
+}
+unsafe impl Send for NumberBox {}
+unsafe impl Sync for NumberBox {}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NumberBoxValueChangedEventArgs(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    NumberBoxValueChangedEventArgs,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+impl windows_core::RuntimeType for NumberBoxValueChangedEventArgs {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, INumberBoxValueChangedEventArgs>();
+}
+unsafe impl windows_core::Interface for NumberBoxValueChangedEventArgs {
+    type Vtable = <INumberBoxValueChangedEventArgs as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID =
+        <INumberBoxValueChangedEventArgs as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for NumberBoxValueChangedEventArgs {
+    type Target = INumberBoxValueChangedEventArgs;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for NumberBoxValueChangedEventArgs {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.NumberBoxValueChangedEventArgs";
+}
+unsafe impl Send for NumberBoxValueChangedEventArgs {}
+unsafe impl Sync for NumberBoxValueChangedEventArgs {}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Orientation(pub i32);
+impl Orientation {
+    pub const Vertical: Self = Self(0);
+    pub const Horizontal: Self = Self(1);
+}
+impl windows_core::TypeKind for Orientation {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for Orientation {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Microsoft.UI.Xaml.Controls.Orientation;i4)",
+    );
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PACKAGE_VERSION {
+    pub Anonymous: PACKAGE_VERSION_0,
+}
+impl Default for PACKAGE_VERSION {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub union PACKAGE_VERSION_0 {
+    pub Version: u64,
+    pub Anonymous: PACKAGE_VERSION_0_0,
+}
+impl Default for PACKAGE_VERSION_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PACKAGE_VERSION_0_0 {
+    pub Revision: u16,
+    pub Build: u16,
+    pub Minor: u16,
+    pub Major: u16,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct POINT {
+    pub x: i32,
+    pub y: i32,
+}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Panel(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(Panel, windows_core::IUnknown, windows_core::IInspectable);
+windows_core::imp::required_hierarchy!(Panel, FrameworkElement, UIElement, DependencyObject);
+impl windows_core::RuntimeType for Panel {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IPanel>();
+}
+unsafe impl windows_core::Interface for Panel {
+    type Vtable = <IPanel as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IPanel as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for Panel {
+    type Target = IPanel;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for Panel {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.Panel";
+}
+unsafe impl Send for Panel {}
+unsafe impl Sync for Panel {}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Paragraph(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    Paragraph,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+windows_core::imp::required_hierarchy!(Paragraph, Block, TextElement, DependencyObject);
+impl Paragraph {
+    pub(crate) fn new() -> windows_core::Result<Self> {
+        Self::IActivationFactory(|f| f.ActivateInstance::<Self>())
+    }
+    fn IActivationFactory<
+        R,
+        F: FnOnce(&windows_core::imp::IGenericFactory) -> windows_core::Result<R>,
+    >(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<
+            Paragraph,
+            windows_core::imp::IGenericFactory,
+        > = windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for Paragraph {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IParagraph>();
+}
+unsafe impl windows_core::Interface for Paragraph {
+    type Vtable = <IParagraph as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IParagraph as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for Paragraph {
+    type Target = IParagraph;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for Paragraph {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Documents.Paragraph";
+}
+unsafe impl Send for Paragraph {}
+unsafe impl Sync for Paragraph {}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PasswordBox(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    PasswordBox,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+windows_core::imp::required_hierarchy!(
+    PasswordBox,
+    Control,
+    FrameworkElement,
+    UIElement,
+    DependencyObject
+);
+impl PasswordBox {
+    pub(crate) fn new() -> windows_core::Result<Self> {
+        Self::IActivationFactory(|f| f.ActivateInstance::<Self>())
+    }
+    fn IActivationFactory<
+        R,
+        F: FnOnce(&windows_core::imp::IGenericFactory) -> windows_core::Result<R>,
+    >(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<
+            PasswordBox,
+            windows_core::imp::IGenericFactory,
+        > = windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for PasswordBox {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IPasswordBox>();
+}
+unsafe impl windows_core::Interface for PasswordBox {
+    type Vtable = <IPasswordBox as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IPasswordBox as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for PasswordBox {
+    type Target = IPasswordBox;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for PasswordBox {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.PasswordBox";
+}
+unsafe impl Send for PasswordBox {}
+unsafe impl Sync for PasswordBox {}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PasswordRevealMode(pub i32);
+impl PasswordRevealMode {
+    pub const Peek: Self = Self(0);
+    pub const Hidden: Self = Self(1);
+    pub const Visible: Self = Self(2);
+}
+impl windows_core::TypeKind for PasswordRevealMode {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for PasswordRevealMode {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Microsoft.UI.Xaml.Controls.PasswordRevealMode;i4)",
+    );
+}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersonPicture(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    PersonPicture,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+windows_core::imp::required_hierarchy!(
+    PersonPicture,
+    Control,
+    FrameworkElement,
+    UIElement,
+    DependencyObject
+);
+impl PersonPicture {
+    pub(crate) fn new() -> windows_core::Result<Self> {
+        Self::IPersonPictureFactory(|this| unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(this).CreateInstance)(
+                windows_core::Interface::as_raw(this),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        })
+    }
+    fn IPersonPictureFactory<R, F: FnOnce(&IPersonPictureFactory) -> windows_core::Result<R>>(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<PersonPicture, IPersonPictureFactory> =
+            windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for PersonPicture {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IPersonPicture>();
+}
+unsafe impl windows_core::Interface for PersonPicture {
+    type Vtable = <IPersonPicture as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IPersonPicture as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for PersonPicture {
+    type Target = IPersonPicture;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for PersonPicture {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.PersonPicture";
+}
+unsafe impl Send for PersonPicture {}
+unsafe impl Sync for PersonPicture {}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pivot(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(Pivot, windows_core::IUnknown, windows_core::IInspectable);
+windows_core::imp::required_hierarchy!(
+    Pivot,
+    ItemsControl,
+    Control,
+    FrameworkElement,
+    UIElement,
+    DependencyObject
+);
+impl Pivot {
+    pub(crate) fn new() -> windows_core::Result<Self> {
+        Self::IPivotFactory(|this| unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(this).CreateInstance)(
+                windows_core::Interface::as_raw(this),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        })
+    }
+    fn IPivotFactory<R, F: FnOnce(&IPivotFactory) -> windows_core::Result<R>>(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<Pivot, IPivotFactory> =
+            windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for Pivot {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IPivot>();
+}
+unsafe impl windows_core::Interface for Pivot {
+    type Vtable = <IPivot as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IPivot as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for Pivot {
+    type Target = IPivot;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for Pivot {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.Pivot";
+}
+unsafe impl Send for Pivot {}
+unsafe impl Sync for Pivot {}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PivotItem(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    PivotItem,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+windows_core::imp::required_hierarchy!(
+    PivotItem,
+    ContentControl,
+    Control,
+    FrameworkElement,
+    UIElement,
+    DependencyObject
+);
+impl PivotItem {
+    pub(crate) fn new() -> windows_core::Result<Self> {
+        Self::IPivotItemFactory(|this| unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(this).CreateInstance)(
+                windows_core::Interface::as_raw(this),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        })
+    }
+    fn IPivotItemFactory<R, F: FnOnce(&IPivotItemFactory) -> windows_core::Result<R>>(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<PivotItem, IPivotItemFactory> =
+            windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for PivotItem {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IPivotItem>();
+}
+unsafe impl windows_core::Interface for PivotItem {
+    type Vtable = <IPivotItem as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IPivotItem as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for PivotItem {
+    type Target = IPivotItem;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for PivotItem {
+    const NAME: &'static str = "Microsoft.UI.Xaml.Controls.PivotItem";
+}
+unsafe impl Send for PivotItem {}
+unsafe impl Sync for PivotItem {}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlacementMode(pub i32);
+impl PlacementMode {
+    pub const Bottom: Self = Self(2);
+    pub const Left: Self = Self(9);
+    pub const Mouse: Self = Self(7);
+    pub const Right: Self = Self(4);
+    pub const Top: Self = Self(10);
+}
+impl windows_core::TypeKind for PlacementMode {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for PlacementMode {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Microsoft.UI.Xaml.Controls.Primitives.PlacementMode;i4)",
+    );
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+impl windows_core::TypeKind for Point {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for Point {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::from_slice(b"struct(Windows.Foundation.Point;f4;f4)");
 }
 windows_core::imp::define_interface!(
     PointerEventHandler,
