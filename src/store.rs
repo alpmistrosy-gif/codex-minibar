@@ -1457,7 +1457,7 @@ mod tests {
     #[test]
     fn remote_hydration_ignores_saved_percentages_and_preserves_cursor() {
         let dir = tempdir().unwrap();
-        let mut store = test_store(&dir.path().join("store.sqlite"));
+        let store = test_store(&dir.path().join("store.sqlite"));
         let saved = RateLimits {
             primary: crate::limits::LimitWindow {
                 used_percent: Some(42),
