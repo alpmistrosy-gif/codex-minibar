@@ -115,7 +115,12 @@ fn parse_provider_at(
     if root.get("schema").and_then(Value::as_u64) != Some(1) {
         bail!("unsupported Home Linux AI usage schema");
     }
-    if root.get("freshness").and_then(Value::as_str) != Some("FRESH") {
+    // The document may be DEGRADED when the other provider fails. Its
+    // timestamp checks and the requested provider freshness gate still apply.
+    if !matches!(
+        root.get("freshness").and_then(Value::as_str),
+        Some("FRESH" | "DEGRADED")
+    ) {
         bail!("Home Linux AI usage snapshot is not fresh");
     }
 
@@ -344,6 +349,60 @@ mod tests {
         assert_eq!(claude.primary.remaining_percent(), Some(82));
         assert_eq!(claude.secondary.remaining_percent(), Some(0));
         assert_eq!(claude.plan_type.as_deref(), Some("pro"));
+    }
+
+    #[test]
+    fn degraded_document_keeps_fresh_codex_but_rejects_unknown_claude() {
+        let payload = json!({
+            "schema": 1,
+            "generated_at": "2026-09-06T15:11:35Z",
+            "expires_at": "2026-09-06T15:14:35Z",
+            "ttl_seconds": 180,
+            "freshness": "DEGRADED",
+            "providers": {
+                "codex": {
+                    "freshness": "FRESH",
+                    "as_of": "2026-09-06T15:11:36Z",
+                    "windows": {
+                        "five_hour": {"state":"FRESH","used_percent":1},
+                        "weekly": {"state":"FRESH","used_percent":0}
+                    }
+                },
+                "claude": {
+                    "freshness": "UNKNOWN",
+                    "windows": {
+                        "five_hour": {"state":"UNKNOWN"},
+                        "seven_day": {"state":"UNKNOWN"}
+                    }
+                }
+            }
+        });
+        let codex = parse_provider(&payload, ProviderKind::Codex).unwrap();
+        assert_eq!(codex.primary.remaining_percent(), Some(99));
+        assert_eq!(codex.secondary.remaining_percent(), Some(100));
+        assert!(parse_provider(&payload, ProviderKind::Claude).is_err());
+    }
+
+    #[test]
+    fn degraded_document_does_not_bypass_expiry() {
+        let payload = json!({
+            "schema": 1,
+            "generated_at": "2026-09-06T15:08:00Z",
+            "expires_at": "2026-09-06T15:11:00Z",
+            "ttl_seconds": 180,
+            "freshness": "DEGRADED",
+            "providers": {
+                "codex": {
+                    "freshness": "FRESH",
+                    "as_of": "2026-09-06T15:10:00Z",
+                    "windows": {
+                        "five_hour": {"state":"FRESH","used_percent":1},
+                        "weekly": {"state":"FRESH","used_percent":0}
+                    }
+                }
+            }
+        });
+        assert!(parse_provider(&payload, ProviderKind::Codex).is_err());
     }
 
     #[test]
