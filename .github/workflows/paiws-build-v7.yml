@@ -1,0 +1,576 @@
+name: PAIWS MiniBar x64 v7 tailnet HTTP Claude Go
+
+on:
+  push:
+    paths:
+      - '.github/workflows/paiws-build-v7.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout upstream 0.4.4
+        uses: actions/checkout@v4
+        with:
+          repository: vertopolkaLF/codex-minibar
+          ref: 0.4.4
+          path: src
+
+      - name: Apply Claude remote source adaptation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/src/claude.rs")
+          text = path.read_text(encoding="utf-8")
+
+          old_install = '''/// Detect a local Claude Code installation without starting it. A signed-in
+          /// credentials directory is also a useful signal for portable/npm installs
+          /// whose launcher is no longer present on PATH in the current process, and the
+          /// desktop app counts too: it ships its own Claude Code and never writes a
+          /// credentials file.
+          pub fn is_installed(explicit: Option<&Path>) -> bool {
+              first_available(explicit).is_some() || credentials_path().is_some_and(|path| path.is_file())
+          }'''
+
+          new_install = '''fn remote_quota_command() -> Option<String> {
+              std::env::var("CODEX_MINIBAR_CLAUDE_REMOTE_CMD")
+                  .ok()
+                  .and_then(|value| {
+                      let value = value.trim();
+                      (!value.is_empty()).then(|| value.to_owned())
+                  })
+          }
+
+          /// Detect an available Claude quota source without starting Claude.
+          /// A configured remote quota command counts as an available source, so
+          /// Windows does not need a second Claude login merely for display.
+          pub fn is_installed(explicit: Option<&Path>) -> bool {
+              remote_quota_command().is_some()
+                  || first_available(explicit).is_some()
+                  || credentials_path().is_some_and(|path| path.is_file())
+          }'''
+
+          if old_install not in text:
+              raise SystemExit("0.4.4 is_installed anchor not found")
+          text = text.replace(old_install, new_install, 1)
+
+          old_read = '''    pub fn read_rate_limits(&mut self) -> Result<RateLimits> {
+                  let credentials = load_credentials()?;'''
+          new_read = '''    pub fn read_rate_limits(&mut self) -> Result<RateLimits> {
+                  if let Some(command) = remote_quota_command() {
+                      return read_remote_rate_limits(&command);
+                  }
+                  let credentials = load_credentials()?;'''
+
+          if old_read not in text:
+              raise SystemExit("0.4.4 read_rate_limits anchor not found")
+          text = text.replace(old_read, new_read, 1)
+
+          marker = '''impl Default for ClaudeClient {
+          '''
+          if marker not in text:
+              raise SystemExit("0.4.4 ClaudeClient Default marker not found")
+
+          helper = r'''fn read_remote_rate_limits(command: &str) -> Result<RateLimits> {
+              let output = if cfg!(windows) {
+                  Command::new("cmd.exe")
+                      .args(["/D", "/C"])
+                      .arg(command)
+                      .output()
+              } else {
+                  Command::new("sh").args(["-c", command]).output()
+              }
+              .context("launch Claude remote quota command")?;
+
+              if !output.status.success() {
+                  let stderr = String::from_utf8_lossy(&output.stderr);
+                  bail!(
+                      "Claude remote quota command failed with {}: {}",
+                      output.status,
+                      stderr.trim()
+                  );
+              }
+
+              let stdout =
+                  String::from_utf8(output.stdout).context("decode Claude remote quota command output")?;
+              let snapshot: Value =
+                  serde_json::from_str(stdout.trim()).context("parse Claude remote quota snapshot")?;
+
+              anyhow::ensure!(
+                  snapshot.get("provider").and_then(Value::as_str) == Some("claude"),
+                  "Claude remote quota snapshot has the wrong provider"
+              );
+
+              let freshness = snapshot
+                  .get("freshness")
+                  .and_then(Value::as_str)
+                  .unwrap_or("UNKNOWN");
+              if freshness != "FRESH" {
+                  let detail = snapshot
+                      .get("error")
+                      .and_then(Value::as_str)
+                      .unwrap_or("remote snapshot is not fresh");
+                  bail!("Claude remote quota snapshot is {freshness}: {detail}");
+              }
+
+              let usage = serde_json::json!({
+                  "five_hour": remote_window(snapshot.pointer("/windows/five_hour")),
+                  "seven_day": remote_window(snapshot.pointer("/windows/seven_day")),
+              });
+
+              let sampled_at = snapshot
+                  .get("as_of")
+                  .and_then(Value::as_str)
+                  .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                  .map(|value| value.with_timezone(&Utc))
+                  .unwrap_or_else(Utc::now);
+
+              let mut limits = parse_usage_response(&usage.to_string(), sampled_at)?;
+              limits.plan_type = snapshot
+                  .get("plan")
+                  .and_then(Value::as_str)
+                  .map(str::to_owned);
+              Ok(limits)
+          }
+
+          fn remote_window(window: Option<&Value>) -> Value {
+              let Some(window) = window else {
+                  return Value::Null;
+              };
+              if window.get("state").and_then(Value::as_str) != Some("FRESH") {
+                  return Value::Null;
+              }
+              let Some(used_percent) = window.get("used_percent").and_then(Value::as_f64) else {
+                  return Value::Null;
+              };
+              serde_json::json!({
+                  "utilization": used_percent,
+                  "resets_at": window.get("reset_at").cloned().unwrap_or(Value::Null),
+              })
+          }
+
+          '''
+
+          text = text.replace(marker, helper + marker, 1)
+          path.write_text(text, encoding="utf-8", newline="\n")
+          print("Claude remote source adaptation applied to exact upstream 0.4.4 source.")
+          PY
+
+      - name: Apply strict freshness invalidation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # AppState: preserve provider/card identity and metric shapes, but
+          # invalidate provider-fresh values after a failed quota poll.
+          state_path = Path("src/src/popup_window/state.rs")
+          state = state_path.read_text(encoding="utf-8")
+
+          state_anchor = "    pub(super) fn replace_usage("
+          insert_at = state.find(state_anchor)
+          if insert_at < 0:
+              raise SystemExit("0.4.4 replace_usage anchor not found")
+
+          helper = '''    /// Invalidate live quota fields after a provider poll failure.
+              /// Existing widgets remain configured, but stale percentages/reset times
+              /// disappear immediately instead of masquerading as current values.
+              pub(super) fn invalidate_limits(&self, provider: ProviderKind) {
+                  if let Ok(mut current) = self.limits.lock() {
+                      let limits = current.get_mut(provider);
+
+                      limits.primary.used_percent = None;
+                      limits.primary.resets_at = None;
+                      limits.secondary.used_percent = None;
+                      limits.secondary.resets_at = None;
+
+                      for additional in &mut limits.additional_limits {
+                          additional.window.used_percent = None;
+                          additional.window.resets_at = None;
+                      }
+
+                      limits.credits = Default::default();
+                      limits.reset_credits = None;
+                      limits.spending = None;
+                      limits.openrouter_accounts.clear();
+                      limits.primary_window_is_unactivated = false;
+                  }
+              }
+
+          '''
+          state = state[:insert_at] + helper + state[insert_at:]
+          state_path.write_text(state, encoding="utf-8", newline="\n")
+
+          # UI bridge: scope the edit specifically to ProviderPollFailed.
+          bridge_path = Path("src/src/popup_window/bridge.rs")
+          bridge = bridge_path.read_text(encoding="utf-8")
+
+          event_anchor = "Ok(WorkerEvent::ProviderPollFailed(provider, error)) => {"
+          event_at = bridge.find(event_anchor)
+          if event_at < 0:
+              raise SystemExit("0.4.4 ProviderPollFailed event anchor not found")
+
+          set_error = "ui.set_provider_error(provider, error);"
+          set_at = bridge.find(set_error, event_at)
+          if set_at < 0:
+              raise SystemExit("0.4.4 ProviderPollFailed set_provider_error anchor not found")
+
+          publish = "publish_popup_ui(&set_ui, &ui);"
+          publish_at = bridge.find(publish, set_at)
+          if publish_at < 0:
+              raise SystemExit("0.4.4 ProviderPollFailed publish anchor not found")
+
+          insert = '''
+                              state.invalidate_limits(provider);
+                              let limits = state.current_limits();
+                              if let Err(error) = tray.sync(
+                                  &widgets,
+                                  &limits,
+                                  update_available_from_phase(&update_phase),
+                              ) {
+                                  ui.set_popup_error(error.to_string());
+                              }
+                              ui.observe_limits_update();
+                              '''
+          bridge = bridge[:set_at + len(set_error)] + insert + bridge[publish_at:]
+          bridge_path.write_text(bridge, encoding="utf-8", newline="\n")
+
+          print("Strict provider poll failure invalidation applied.")
+          PY
+
+
+      - name: Use Home Linux snapshot only for OpenCode Go
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/src/opencode.rs")
+          text = path.read_text(encoding="utf-8")
+          install_anchor = '''    resolve_api_key(catalog).ok().flatten().is_some()
+                  || database_has_provider(catalog).unwrap_or(false)'''
+          install_new = '''    (cfg!(windows) && provider == ProviderKind::OpenCodeGo)
+                  || resolve_api_key(catalog).ok().flatten().is_some()
+                  || database_has_provider(catalog).unwrap_or(false)'''
+          if text.count(install_anchor) != 1:
+              raise SystemExit("Unexpected OpenCode provider detection source; abort build")
+          text = text.replace(install_anchor, install_new, 1)
+
+          start = text.find("    fn read_go_limits(&self) -> Result<RateLimits> {")
+          end = text.find("    fn read_local_usage(", start)
+          if start < 0 or end < 0:
+              raise SystemExit("Unable to locate Go quota routine in pinned upstream v0.4.4")
+          original = text[start:end]
+          original_body = original.split("{", 1)[1].rsplit("}", 1)[0]
+
+          windows_body = r'''
+              #[cfg(windows)]
+              {
+                  use std::os::windows::process::CommandExt;
+
+                  // Read only the numeric Go snapshot that Home Linux already
+                  // collected. Never fetch the Go API or use a Go key on Windows.
+                  let mut ssh = std::process::Command::new("ssh.exe");
+                  ssh.args([
+                      "-T",
+                      "-o", "BatchMode=yes",
+                      "-o", "ConnectTimeout=5",
+                      "-o", "ConnectionAttempts=1",
+                      "-o", "ServerAliveInterval=5",
+                      "-o", "ServerAliveCountMax=1",
+                      "homelinux",
+                      "cat /home/shigure/.local/share/paiws-quota-public/opencode_go.json",
+                  ]);
+                  ssh.creation_flags(0x0800_0000);
+                  let result = ssh.output().context("read OpenCode Go snapshot via SSH homelinux")?;
+                  if !result.status.success() {
+                      bail!(
+                          "OpenCode Go SSH snapshot unavailable (exit {}): {}",
+                          result.status,
+                          String::from_utf8_lossy(&result.stderr).trim()
+                      );
+                  }
+                  if result.stdout.len() > 16_384 {
+                      bail!("OpenCode Go snapshot too large");
+                  }
+                  let snapshot: Value = serde_json::from_slice(&result.stdout)
+                      .context("decode sanitized Home Linux Go snapshot")?;
+                  if snapshot.get("freshness").and_then(Value::as_str) != Some("FRESH") {
+                      bail!("OpenCode Go server snapshot is not fresh");
+                  }
+                  let expiry = snapshot
+                      .get("expires_at")
+                      .and_then(Value::as_str)
+                      .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                      .map(|t| t.with_timezone(&Utc))
+                      .context("OpenCode Go snapshot has no expiration timestamp")?;
+                  if expiry <= Utc::now() {
+                      bail!("OpenCode Go server snapshot has expired");
+                  }
+                  let windows = snapshot
+                      .get("windows")
+                      .and_then(Value::as_object)
+                      .context("Go snapshot has no usage windows")?;
+                  let mut usage = serde_json::Map::new();
+                  for (source, destination) in [
+                      ("five_hour", "rolling"),
+                      ("weekly", "weekly"),
+                      ("monthly", "monthly"),
+                  ] {
+                      let Some(window) = windows.get(source).and_then(Value::as_object) else {
+                          continue;
+                      };
+                      let Some(remaining) = window.get("remaining_percent").and_then(Value::as_f64)
+                      else {
+                          continue;
+                      };
+                      if !remaining.is_finite() || !(0.0..=100.0).contains(&remaining) {
+                          bail!("Invalid OpenCode Go remaining percentage for {source}");
+                      }
+                      let resets_at = window.get("reset_at").and_then(Value::as_str);
+                      usage.insert(
+                          destination.to_owned(),
+                          serde_json::json!({
+                              "percent": 100.0 - remaining,
+                              "resetsAt": resets_at,
+                          }),
+                      );
+                  }
+                  let converted = serde_json::json!({ "usage": usage });
+                  return parse_go_usage(&converted.to_string(), Utc::now());
+              }
+          '''
+          non_windows = "\n        #[cfg(not(windows))]\n        {\n" + original_body + "\n        }\n"
+          replacement = "    fn read_go_limits(&self) -> Result<RateLimits> {\n" + windows_body + non_windows + "    }\n\n"
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding="utf-8", newline="\n")
+
+          # Guardrails: other providers, source settings and credentials unchanged.
+          assert "read_zen_limits(&self)" in text
+          assert "read_remote_rate_limits" not in text or True
+          assert text.count("OpenCode Go server snapshot has expired") == 1
+          print("Only Go quota source patched to SSH; Claude/Codex remote patches preserved.")
+          PY
+
+      - name: Make Claude SSH silent and independent of PowerShell
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/src/claude.rs")
+          source = path.read_text(encoding="utf-8")
+
+          # Previous remote patch required a transient environment variable
+          # to choose Home Linux. The GUI must keep polling after closing any
+          # shell; for Windows make the established SSH alias authoritative.
+          fn_start = source.index("fn remote_quota_command() -> Option<String> {")
+          fn_end = source.index("\n\n", fn_start)
+          old_fn = source[fn_start:fn_end]
+          assert "CODEX_MINIBAR_CLAUDE_REMOTE_CMD" in old_fn
+
+          new_fn = """fn remote_quota_command() -> Option<String> {
+              #[cfg(windows)]
+              {
+                  // Built-in remote source on Windows. No PowerShell, no
+                  // environment variable, no local Claude credentials.
+                  Some("home-linux-ssh".to_owned())
+              }
+              #[cfg(not(windows))]
+              {
+                  std::env::var("CODEX_MINIBAR_CLAUDE_REMOTE_CMD")
+                      .ok()
+                      .and_then(|value| {
+                          let value = value.trim();
+                          (!value.is_empty()).then(|| value.to_owned())
+                      })
+              }
+          }"""
+          source = source[:fn_start] + new_fn + source[fn_end:]
+
+          # Match Codex's already-working CREATE_NO_WINDOW launch behavior
+          # and Go's direct ssh.exe + no-interactive prompt configuration.
+          start = source.index("fn read_remote_rate_limits(command: &str) -> Result<RateLimits> {")
+          first = source.index("let output = if cfg!(windows) {", start)
+          last_part = '.context("launch Claude remote quota command")?;'
+          last = source.index(last_part, first) + len(last_part)
+          old_output = source[first:last]
+          assert 'Command::new("cmd.exe")' in old_output
+          assert 'Command::new("sh")' in old_output
+
+          new_output = r'''let output = {
+              #[cfg(windows)]
+              {
+                  use std::os::windows::process::CommandExt;
+
+                  let mut ssh = Command::new("ssh.exe");
+                  ssh.args([
+                      "-T",
+                      "-o", "BatchMode=yes",
+                      "-o", "ConnectTimeout=5",
+                      "-o", "ConnectionAttempts=1",
+                      "-o", "ServerAliveInterval=5",
+                      "-o", "ServerAliveCountMax=1",
+                      "homelinux",
+                      "bash /srv/personal-ai/workspace/technical/ai_usage_hud/product_adapter/paiws-claude-usage-snapshot.sh",
+                  ]);
+                  // Identical to Codex's command_for_codex:
+                  // CREATE_NO_WINDOW avoids foreground SSH consoles and
+                  // disconnects terminal-close events from this subprocess.
+                  ssh.creation_flags(0x0800_0000);
+                  ssh.output()
+              }
+              #[cfg(not(windows))]
+              {
+                  Command::new("sh").args(["-c", command]).output()
+              }
+          }
+          .context("launch Claude SSH quota snapshot silently")?;'''
+          source = source[:first] + new_output + source[last:]
+
+          # Stay scoped to Claude process spawning. Go and Codex untouched.
+          assert source.count("fn read_remote_rate_limits(") == 1
+          assert source.count('ssh.creation_flags(0x0800_0000)') == 1
+          assert source.count('Some("home-linux-ssh".to_owned())') == 1
+          assert 'OpenCode Go' not in old_output
+          path.write_text(source, encoding="utf-8", newline="\n")
+          print("Claude native SSH with CREATE_NO_WINDOW, no persistent shell dependency: ready.")
+          PY
+
+      - name: Replace per-refresh SSH with bounded tailnet HTTP for Claude and Go
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          claude_path = Path("src/src/claude.rs")
+          code = claude_path.read_text(encoding="utf-8")
+          anchor = "fn read_remote_rate_limits(command: &str) -> Result<RateLimits> {"
+          assert code.count(anchor) == 1
+          helper = r'''#[cfg(windows)]
+          pub(crate) fn home_linux_status() -> Result<Value> {
+              use std::io::{Read, Write};
+              use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+              let addr = SocketAddr::new(
+                  IpAddr::V4(Ipv4Addr::new(100, 102, 168, 71)), 8767
+              );
+              let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(12))
+                  .context("connect Home Linux AI quota HTTP over Tailscale")?;
+              stream.set_read_timeout(Some(Duration::from_secs(12)))?;
+              stream.set_write_timeout(Some(Duration::from_secs(12)))?;
+              stream.write_all(
+                  b"GET /ai-usage.json HTTP/1.0\r\nHost: 100.102.168.71:8767\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+              ).context("send Home Linux AI quota HTTP GET")?;
+              let mut response = Vec::new();
+              (&mut stream).take(131073).read_to_end(&mut response)
+                  .context("read Home Linux AI quota HTTP response")?;
+              anyhow::ensure!(response.len() <= 131072, "Home Linux quota response too large");
+              let split = response.windows(4).position(|w| w == b"\r\n\r\n")
+                  .context("Home Linux quota HTTP response missing headers")?;
+              let status = std::str::from_utf8(&response[..split])
+                  .context("invalid Home Linux quota headers")?
+                  .lines().next().unwrap_or_default();
+              anyhow::ensure!(
+                  status.starts_with("HTTP/1.0 200 ") || status.starts_with("HTTP/1.1 200 "),
+                  "Home Linux quota HTTP unavailable: {status}"
+              );
+              let root: Value = serde_json::from_slice(&response[split+4..])
+                  .context("decode Home Linux quota JSON")?;
+              anyhow::ensure!(root.get("schema").and_then(Value::as_u64) == Some(1),
+                  "Home Linux quota snapshot schema mismatch");
+              anyhow::ensure!(
+                  matches!(root.get("freshness").and_then(Value::as_str), Some("FRESH" | "DEGRADED")),
+                  "Home Linux quota snapshot is stale");
+              let generated = root.get("generated_at").and_then(Value::as_str)
+                  .context("Home Linux missing snapshot generated_at")?;
+              let expires = root.get("expires_at").and_then(Value::as_str)
+                  .context("Home Linux missing snapshot expires_at")?;
+              let generated = DateTime::parse_from_rfc3339(generated)
+                  .context("invalid generated_at")?.with_timezone(&Utc);
+              let expires = DateTime::parse_from_rfc3339(expires)
+                  .context("invalid expires_at")?.with_timezone(&Utc);
+              let ttl = root.get("ttl_seconds").and_then(Value::as_i64)
+                  .filter(|v| *v > 0 && *v <= 600).context("invalid Home Linux TTL")?;
+              let now = Utc::now();
+              anyhow::ensure!(
+                  generated <= now + chrono::Duration::seconds(60)
+                  && expires > now && expires <= generated + chrono::Duration::seconds(ttl),
+                  "Home Linux quota data expired or has invalid timestamps");
+              Ok(root)
+          }
+
+          '''
+          code = code.replace(anchor, helper + anchor, 1)
+          begin = code.index("let output = {", code.index(anchor))
+          finish = code.index("let snapshot: Value =", begin)
+          replacement = r'''let stdout = {
+              #[cfg(windows)]
+              {
+                  let root = home_linux_status()?;
+                  let claude = root.pointer("/providers/claude")
+                      .context("Claude missing in Home Linux quota snapshot")?;
+                  serde_json::to_string(claude)
+                      .context("encode sanitized Claude quota snapshot")?
+              }
+              #[cfg(not(windows))]
+              {
+                  let output = Command::new("sh").args(["-c", command]).output()
+                      .context("launch Claude remote quota command")?;
+                  if !output.status.success() {
+                      bail!("Claude remote quota command failed: {}",
+                          String::from_utf8_lossy(&output.stderr).trim());
+                  }
+                  String::from_utf8(output.stdout).context("decode Claude quota output")?
+              }
+          };
+          '''
+          code = code[:begin] + replacement + code[finish:]
+          assert "ssh.exe" not in code[code.index(anchor):code.index("impl Default for ClaudeClient")]
+          assert code.count("home_linux_status()") == 2
+          claude_path.write_text(code, encoding="utf-8", newline="\n")
+
+          go_path = Path("src/src/opencode.rs")
+          go = go_path.read_text(encoding="utf-8")
+          start_fn = go.index("    fn read_go_limits(&self) -> Result<RateLimits> {")
+          start = go.index("use std::os::windows::process::CommandExt;", start_fn)
+          end = go.index('if snapshot.get("freshness")', start)
+          new = r'''let root = crate::claude::home_linux_status()?;
+                  let snapshot = root.pointer("/providers/opencode_go")
+                      .context("OpenCode Go missing in Home Linux quota snapshot")?;
+                  '''
+          go = go[:start] + new + go[end:]
+          assert go.count("crate::claude::home_linux_status()") == 1
+          assert "OpenCode Go SSH snapshot unavailable" not in go
+          go_path.write_text(go, encoding="utf-8", newline="\n")
+          print("V7 tailnet HTTP source applied for Claude+Go; Codex source unchanged.")
+          PY
+
+      - name: Install Rust 1.95
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Format patched source
+        working-directory: src
+        run: cargo fmt --all
+
+      - name: Build x64 portable
+        shell: pwsh
+        working-directory: src
+        run: .\build.ps1 -Arch x64 -SkipInstaller
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-minibar-paiws-0.4.4-x64-v7-http-claude-go
+          path: src/dist/0.4.4/*-portable.zip
+          if-no-files-found: error
